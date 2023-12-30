@@ -21,7 +21,7 @@ class Trace:
         self.loss_vals = None
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
-    
+        
     def compute_loss_of_iterates(self):
         if self.loss_vals is None:
             self.loss_vals = np.asarray([self.loss.value(x) for x in self.xs])
@@ -35,17 +35,21 @@ class Trace:
         self.its = np.asarray(self.its) / its_per_epoch
         self.its_converted_to_epochs = True
           
-    def plot_losses(self, f_opt=None, markevery=None, *args, **kwargs):
+    def plot_losses(self, f_opt=None, ax=None, markevery=None, *args, **kwargs):
         if self.loss_vals is None:
             self.compute_loss_of_iterates()
         if f_opt is None:
             f_opt = np.min(self.loss_vals)
         if markevery is None:
             markevery = max(1, len(self.loss_vals)//20)
-        plt.plot(self.its, self.loss_vals - f_opt, markevery=markevery, *args, **kwargs)
-        plt.ylabel(r'$f(x)-f^*$')
+        if ax is None:
+            plt.plot(self.its, self.loss_vals - f_opt, markevery=markevery, *args, **kwargs)
+            plt.ylabel(r'$f(x)-f^*$')
+        else:
+            ax.plot(self.its, self.loss_vals - f_opt, markevery=markevery, *args, **kwargs)
+            ax.set_ylabel(r'$f(x)-f^*$')
         
-    def plot_distances(self, x_opt=None, markevery=None, *args, **kwargs):
+    def plot_distances(self, x_opt=None, ax=None, markevery=None, *args, **kwargs):
         if x_opt is None:
             if self.loss_vals is None:
                 x_opt = self.xs[-1]
@@ -55,8 +59,12 @@ class Trace:
         if markevery is None:
             markevery = max(1, len(self.xs)//20)
         dists = [safe_sparse_norm(x-x_opt)**2 for x in self.xs]
-        plt.plot(self.its, dists, markevery=markevery, *args, **kwargs)
-        plt.ylabel(r'$\Vert x-x^*\Vert^2$')
+        if ax is None:
+            plt.plot(self.its, dists, markevery=markevery, *args, **kwargs)
+            plt.ylabel(r'$\Vert x-x^*\Vert^2$')
+        else:
+            ax.plot(self.its, dists, markevery=markevery, *args, **kwargs)
+            ax.set_ylabel(r'$\Vert x-x^*\Vert^2$')
         
     def best_loss_value(self):
         if not self.loss_is_computed:
@@ -92,6 +100,7 @@ class StochasticTrace:
         self.ts_all = {}
         self.its_all = {}
         self.loss_vals_all = {}
+        self.grad_norms_last_iterate = {}
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
         
@@ -116,6 +125,16 @@ class StochasticTrace:
                       Set .loss_vals_all[{}] = None to recompute""".format(seed, seed))
         self.loss_is_computed = True
     
+    def compute_last_iterate_grad_norms(self):
+        self.grad_norms_last_iterate = {}
+        for seed in self.xs_all:
+            self.grad_norms_last_iterate[seed] = np.empty(self.loss.n)
+            x_last = self.xs_all[seed][-1]
+            for i in range(self.loss.n):
+                grad_i = self.loss.stochastic_gradient(x_last, idx=i)
+                grad_norm_i = self.loss.norm(grad_i)
+                self.grad_norms_last_iterate[seed][i] = grad_norm_i
+    
     def best_loss_value(self):
         if not self.loss_is_computed:
             self.compute_loss_of_iterates()
@@ -130,7 +149,7 @@ class StochasticTrace:
         self.its = np.asarray(self.its) / its_per_epoch
         self.its_converted_to_epochs = True
         
-    def plot_losses(self, f_opt=None, log_std=True, markevery=None, alpha=0.25, *args, **kwargs):
+    def plot_losses(self, f_opt=None, log_std=True, markevery=None, alpha=0.25, ax=None, *args, **kwargs):
         if not self.loss_is_computed:
             self.compute_loss_of_iterates()
         if f_opt is None:
@@ -150,12 +169,19 @@ class StochasticTrace:
         if markevery is None:
             markevery = max(1, len(y_ave)//20)
             
-        plot = plt.plot(it_ave, y_ave, markevery=markevery, *args, **kwargs)
-        if len(self.loss_vals_all.keys()) > 1:
-            plt.fill_between(it_ave, upper, lower, alpha=alpha, color=plot[0].get_color())
-        plt.ylabel(r'$f(x)-f^*$')
+        if ax is None:
+            plot = plt.plot(it_ave, y_ave, markevery=markevery, *args, **kwargs)
+            if len(self.loss_vals_all.keys()) > 1:
+                plt.fill_between(it_ave, upper, lower, alpha=alpha, color=plot[0].get_color())
+            plt.ylabel(r'$f(x)-f^*$')
+        else:
+            ax.plot(it_ave, y_ave, markevery=markevery, *args, **kwargs)
+            if len(self.loss_vals_all.keys()) > 1:
+                ax.fill_between(it_ave, upper, lower, alpha=alpha, color=ax.get_lines()[-1].get_color())
+            ax.set_ylabel(r'$f(x)-f^*$')
+
         
-    def plot_distances(self, x_opt=None, log_std=True, markevery=None, alpha=0.25, *args, **kwargs):
+    def plot_distances(self, x_opt=None, log_std=True, markevery=None, alpha=0.25, ax=None, *args, **kwargs):
         if x_opt is None:
             if self.loss_is_computed:
                 f_opt = np.inf
@@ -183,10 +209,17 @@ class StochasticTrace:
         if markevery is None:
             markevery = max(1, len(y_ave)//20)
             
-        plot = plt.plot(it_ave, y_ave, markevery=markevery, *args, **kwargs)
-        if len(self.loss_vals_all.keys()) > 1:
-            plt.fill_between(it_ave, upper, lower, alpha=alpha, color=plot[0].get_color())
-        plt.ylabel(r'$\Vert x-x^*\Vert^2$')
+        if ax is None:
+            plot = plt.plot(it_ave, y_ave, markevery=markevery, *args, **kwargs)
+            if len(self.loss_vals_all.keys()) > 1:
+                plt.fill_between(it_ave, upper, lower, alpha=alpha, color=plot[0].get_color())
+            plt.ylabel(r'$\Vert x-x^*\Vert^2$')
+        else:
+            ax.plot(it_ave, y_ave, markevery=markevery, *args, **kwargs)
+            if len(self.loss_vals_all.keys()) > 1:
+                ax.fill_between(it_ave, upper, lower, alpha=alpha, color=ax.get_lines()[-1].get_color())
+            ax.set_ylabel(r'$\Vert x-x^*\Vert^2$')
+            
         
     def save(self, file_name, path='./results/'):
         self.loss = None
