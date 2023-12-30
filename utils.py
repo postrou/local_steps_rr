@@ -37,7 +37,14 @@ def set_seed(seed=42):
     np.random.seed(seed)
     
 
-def variance_at_opt(x_opt, loss, batch_size=1, perms=None, n_perms=1, L_batch=None, lr=None):
+def variance_at_opt(
+    x_opt, 
+    loss, 
+    batch_size=1, 
+    perms=None, 
+    n_perms=1, 
+    L_batch=None, 
+    lr=None):
     if L_batch is None:
         # for simplicity, we use max smoothness, but one might want to use batch smoothness instead
         L_batch = loss.max_smoothness()
