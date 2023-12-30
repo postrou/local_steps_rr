@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Not needed files
+.DS_Store
+*.png
+*.pdf
+results/*
