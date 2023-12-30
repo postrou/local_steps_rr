@@ -49,8 +49,8 @@ class LogisticRegression(Oracle):
     
     def value(self, x):
         z = self.mat_vec_product(x)
-        regularization = self.l1*safe_sparse_norm(x, ord=1) + self.l2/2*safe_sparse_norm(x)**2
-        return np.mean(safe_sparse_multiply(1-self.b, z)-logsig(z)) + regularization
+        regularization = self.l1 * safe_sparse_norm(x, ord=1) + self.l2 / 2 * safe_sparse_norm(x) ** 2
+        return np.mean(safe_sparse_multiply(1 - self.b, z) - logsig(z)) + regularization
     
     def partial_value(self, x, idx, include_reg=True, normalization=None):
         batch_size = 1 if np.isscalar(idx) else len(idx)
@@ -67,7 +67,7 @@ class LogisticRegression(Oracle):
     def gradient(self, x):
         z = self.mat_vec_product(x)
         activation = scipy.special.expit(z)
-        grad = safe_sparse_add(self.A.T@(activation-self.b)/self.n, self.l2*x)
+        grad = safe_sparse_add(self.A.T @ (activation - self.b) / self.n, self.l2 * x)
         if scipy.sparse.issparse(x):
             grad = scipy.sparse.csr_matrix(grad).T
         return grad
@@ -87,7 +87,7 @@ class LogisticRegression(Oracle):
         if scipy.sparse.issparse(z):
             z = z.toarray().ravel()
         activation = scipy.special.expit(z)
-        stoch_grad = safe_sparse_add(self.A[idx].T@(activation-self.b[idx])/normalization, self.l2*x)
+        stoch_grad = safe_sparse_add(self.A[idx].T @ (activation - self.b[idx]) / normalization, self.l2 * x)
         if scipy.sparse.issparse(x):
             stoch_grad = scipy.sparse.csr_matrix(stoch_grad).T
         return stoch_grad
@@ -130,10 +130,10 @@ class LogisticRegression(Oracle):
     def smoothness(self):
         if scipy.sparse.issparse(self.A):
             sing_val_max = scipy.sparse.linalg.svds(self.A, k=1, return_singular_vectors=False)[0]
-            return 0.25*sing_val_max**2/self.n + self.l2
+            return 0.25 * sing_val_max ** 2 / self.n + self.l2
         else:
-            covariance = self.A.T@self.A/self.n
-            return 0.25*np.max(la.eigvalsh(covariance)) + self.l2
+            covariance = self.A.T @ self.A / self.n
+            return 0.25 * np.max(la.eigvalsh(covariance)) + self.l2
     
     def max_smoothness(self):
         max_squared_sum = row_norms(self.A, squared=True).max()

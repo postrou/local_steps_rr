@@ -26,7 +26,7 @@ class Shuffling(StochasticOptimizer):
         self.sampled_permutations = 0
         
     def step(self):
-        if self.it%self.steps_per_permutation == 0:
+        if self.it % self.steps_per_permutation == 0:
             self.permutation = np.random.permutation(self.loss.n)
             self.i = 0
             self.sampled_permutations += 1
@@ -43,6 +43,7 @@ class Shuffling(StochasticOptimizer):
         # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
         # any incomplete minibatch should be normalized by batch_size
         self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
+        
         denom_const = 1 / self.lr0
         lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
         self.lr = min(lr_decayed, self.lr_max)
