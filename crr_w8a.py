@@ -80,7 +80,8 @@ if not rr_trace:
 # %%
 print('Clipped Random Reshuffling')
 c_rr_traces = []
-clip_level_list = np.logspace(-1, 2, 4)
+clip_level_list = np.logspace(-3, 2, 6)
+# clip_level_list = np.logspace(-1, 2, 4
 for clip_level in tqdm(clip_level_list):
     c_rr_trace = get_trace(f'{trace_path}c_{clip_level}_rr', loss)
     if not c_rr_trace:
