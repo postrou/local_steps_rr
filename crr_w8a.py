@@ -136,10 +136,12 @@ for clip_level in tqdm(clip_level_list):
 
 # Clipping with shifts
 print('Clipping with shifts')
-alpha_shift = 0.1
+alpha_shift = 1
 c_rr_shift_traces = []
 for clip_level in tqdm(clip_level_list):
-    c_rr_shift_trace = get_trace(f'{trace_path}c_{clip_level}_shift_rr', loss)
+    trace_file_name = f'c_{clip_level}_a_shift_{alpha_shift}_rr'
+    trace_file_path = f'{trace_path}{trace_file_name}'
+    c_rr_shift_trace = get_trace(trace_file_path, loss)
     if not c_rr_shift_trace:
         c_rr_shift_lr0 = 1 / l2
         c_rr_shift_decay_coef = l2 / 3
@@ -161,7 +163,7 @@ for clip_level in tqdm(clip_level_list):
         c_rr_shift_trace.convert_its_to_epochs(batch_size=batch_size)
         c_rr_shift_trace.compute_loss_of_iterates()
         c_rr_shift_trace.compute_last_iterate_grad_norms()
-        c_rr_shift_trace.save(f'c_{clip_level}_shift_rr', trace_path)
+        c_rr_shift_trace.save(trace_file_name, trace_path)
     c_rr_shift_traces.append(c_rr_shift_trace)
     
 # %%
@@ -230,7 +232,9 @@ if not ig_trace:
 # plt.savefig(f'./plots/{dataset}_func.png', dpi=300)
 
 # %%
-fig, axis = plt.subplots(nrows=2, ncols=2, figsize=(18, 15))
+ncols = 2 if len(clip_level_list) >= 2 else 1
+nrows = int(np.ceil(len(clip_level_list) / 2))
+fig, axis = plt.subplots(nrows=nrows, ncols=ncols, figsize=(18, 15))
 for ax, c_rr_trace, c_rr_opt_trace, c_rr_shift_trace, clip_level in \
     zip(axis.flatten(), c_rr_traces, c_rr_opt_traces, c_rr_shift_traces, clip_level_list):
     traces = [c_rr_trace, c_rr_opt_trace, c_rr_shift_trace]
@@ -264,7 +268,7 @@ plt.savefig(f'./plots/{dataset}_func_rr_opt_shift.png', dpi=300)
 # plt.savefig(f'./plots/{dataset}_dist.png', dpi=300)
 
 # %%
-fig, axis = plt.subplots(nrows=2, ncols=2, figsize=(18, 15))
+fig, axis = plt.subplots(nrows=nrows, ncols=ncols, figsize=(18, 15))
 for ax, c_rr_trace, c_rr_opt_trace, c_rr_shift_trace, clip_level in \
     zip(axis.flatten(), c_rr_traces, c_rr_opt_traces, c_rr_shift_traces, clip_level_list):
     traces = [c_rr_trace, c_rr_opt_trace, c_rr_shift_trace]
