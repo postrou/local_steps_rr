@@ -32,14 +32,15 @@ n, dim = A.shape
 L = loss.smoothness()
 l2 = L / np.sqrt(n)
 loss.l2 = l2
-x0 = csc_matrix((dim, 1))
+np.random.seed(0)
+x0 = csc_matrix(np.random.normal(0, 3, size=(dim, 1)))
 n_epoch = 600
 batch_size = 512
 # n_seeds = 2 # was set to 20 in the paper
 n_seeds = 10
 stoch_it = 250 * n // batch_size
 trace_len = 300
-trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
+trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}_x0_random/'
 
 print(n_seeds)
 # %%
