@@ -14,28 +14,43 @@ from utils import get_trace, relative_round
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('alpha_shift', type=float, default=0.1)
+    parser.add_argument('dataset', type=str)
+    parser.add_argument('--alpha', type=float, default=0.1)
     args = parser.parse_args()
-    alpha_shift = args.alpha_shift
-    # Get data and set all parameters
-    dataset = 'gisette'
-    A, b = get_dataset(dataset)
+    alpha_shift = args.alpha
 
+    # Get data and set all parameters
+    print('Loading data')
+    dataset = args.dataset
+    A, b = get_dataset(dataset)
     loss = LogisticRegression(A, b, l1=0, l2=0)
     n, dim = A.shape
     L = loss.smoothness()
     l2 = L / np.sqrt(n)
     loss.l2 = l2
-    x0 = csc_matrix((dim, 1))
     n_epoch = 600
     batch_size = 512
     # n_seeds = 2 # was set to 20 in the paper
     n_seeds = 10
     stoch_it = 250 * n // batch_size
     trace_len = 300
-    trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
+    if dataset == 'w8a':
+        clip_level_list = np.logspace(-3, 2, 6)
+        x0 = csc_matrix((dim, 1))
+        trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
+    elif dataset == 'covtype':
+        clip_level_list = np.logspace(-1, 2, 4)
+        x0 = csc_matrix(np.random.normal(0, 1, size=(dim, 1)))
+        trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}_x0_random/'
+    elif dataset == 'gisette':
+        clip_level_list = np.logspace(-1, 2, 4)
+        x0 = csc_matrix((dim, 1))
+        trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
+    else:
+        raise Exception(f'The parameters for dataset {dataset} are not set up!')
 
     # Run the methods
+    print('Finding optimal solution with FGM')
     nest_str_trace = get_trace(f'{trace_path}nest_str', loss)
     if not nest_str_trace:
         nest_str = Nesterov(loss=loss, it_max=n_epoch, mu=l2, strongly_convex=True)
@@ -61,7 +76,6 @@ if __name__ == '__main__':
     # Just clipping
     print('Clipped Random Reshuffling')
     c_rr_traces = []
-    clip_level_list = np.logspace(-1, 2, 4)
     for clip_level in tqdm(clip_level_list):
         c_rr_trace = get_trace(f'{trace_path}c_{clip_level}_rr', loss)
         if not c_rr_trace:
