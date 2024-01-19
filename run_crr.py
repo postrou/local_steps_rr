@@ -91,7 +91,8 @@ if __name__ == '__main__':
                 n_seeds=n_seeds, 
                 batch_size=batch_size, 
                 trace_len=trace_len,
-                clip_level=clip_level
+                clip_level=clip_level,
+                steps_per_permutation=np.inf
             )
             c_rr_trace = c_rr.run(x0=x0)
             c_rr_trace.convert_its_to_epochs(batch_size=batch_size)
@@ -119,7 +120,8 @@ if __name__ == '__main__':
                 batch_size=batch_size, 
                 trace_len=trace_len,
                 clip_level=clip_level,
-                x_opt=x_opt
+                x_opt=x_opt,
+                steps_per_permutation=np.inf
             )
             c_rr_opt_trace = c_rr_opt.run(x0=x0)
             c_rr_opt_trace.convert_its_to_epochs(batch_size=batch_size)
