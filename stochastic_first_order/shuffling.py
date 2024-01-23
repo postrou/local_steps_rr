@@ -45,7 +45,8 @@ class Shuffling(StochasticOptimizer):
         self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
         
         denom_const = 1 / self.lr0
-        lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
+        lr_decayed = \
+            1 / (denom_const + self.lr_decay_coef * max(0, self.it - self.it_start_decay) ** self.lr_decay_power)
         self.lr = min(lr_decayed, self.lr_max)
         self.x -= self.lr * self.grad
     
