@@ -103,6 +103,7 @@ class StochasticTrace:
         self.grad_norms_last_iterate = {}
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
+        self.step_size = None
         
     def init_seed(self):
         self.xs = []
