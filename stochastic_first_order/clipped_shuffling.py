@@ -73,10 +73,18 @@ class ClippedShuffling(Shuffling):
             if self.x_opt is None:
                 if self.alpha_shift > 0:
                     id_shift = self.it % len(self.shifts)
-                    shift = scipy.sparse.csr_matrix(self.shifts[id_shift].reshape(-1, 1))
+                    shift = self.shifts[id_shift]
+                    if not np.isscalar(self.grad):
+                        shift = shift.reshape(-1, 1)
+                    if scipy.sparse.issparse(self.grad):
+                        shift = scipy.sparse.csr_matrix(shift)
+
                     hat_delta = self.clip(self.grad - shift)
                     self.grad = shift + hat_delta
-                    self.shifts[id_shift] = np.transpose(shift + self.alpha_shift * hat_delta).toarray()
+                    shift_next = np.transpose(shift + self.alpha_shift * hat_delta) 
+                    if scipy.sparse.issparse(shift_next):
+                        shift_next = shift_next.toarray()
+                    self.shifts[id_shift] = shift_next
                 else:
                     self.grad = self.clip(self.grad)
             else:
