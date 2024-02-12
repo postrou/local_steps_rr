@@ -16,11 +16,12 @@ class Trace:
     def __init__(self, loss):
         self.loss = loss
         self.xs = []
-        self.ts = []
-        self.its = []
+        self.ts = [] # time
+        self.its = [] # iterations (can be converted to epochs)
         self.loss_vals = None
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
+        self.grad_estimators = []
         
     def compute_loss_of_iterates(self):
         if self.loss_vals is None:
@@ -75,7 +76,7 @@ class Trace:
         # To make the dumped file smaller, remove the loss
         self.loss = None
         Path(path).mkdir(parents=True, exist_ok=True)
-        f = open(path + file_name, 'wb')
+        f = open(os.path.join(path, file_name), 'wb')
         pickle.dump(self, f)
         f.close()
         
@@ -104,18 +105,21 @@ class StochasticTrace:
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
         self.step_size = None
+        self.grad_estimators_all = {}
         
     def init_seed(self):
         self.xs = []
         self.ts = []
         self.its = []
         self.loss_vals = None
+        self.grad_estimators = []
         
     def append_seed_results(self, seed):
         self.xs_all[seed] = self.xs.copy()
         self.ts_all[seed] = self.ts.copy()
         self.its_all[seed] = self.its.copy()
         self.loss_vals_all[seed] = self.loss_vals.copy() if self.loss_vals else None
+        self.grad_estimators_all[seed] = self.grad_estimators.copy()
     
     def compute_loss_of_iterates(self):
         for seed, loss_vals in self.loss_vals_all.items():

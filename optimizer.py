@@ -25,6 +25,7 @@ class Optimizer:
         self.initialized = False
         self.x_old = None
         self.trace = Trace(loss=loss)
+        self.grad_estimator = None
     
     def run(self, x0):
         if not self.initialized:
@@ -78,6 +79,8 @@ class Optimizer:
         self.trace.xs.append(self.x.copy())
         self.trace.ts.append(self.t)
         self.trace.its.append(self.it)
+        self.trace.grad_estimators.append(self.grad_estimator \
+            if self.grad_estimator is not None else self.grad)
 
         
 class StochasticOptimizer(Optimizer):

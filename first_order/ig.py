@@ -33,6 +33,7 @@ class Ig(Optimizer):
         if lr_decayed < 0:
             lr_decayed = np.inf
         self.lr = min(lr_decayed, self.lr_max)
+        self.trace.grad_estimators.append(self.loss.norm(self.grad))
         self.x -= self.lr * self.grad
     
     def init_run(self, *args, **kwargs):
