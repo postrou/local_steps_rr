@@ -184,7 +184,6 @@ class StochasticTrace:
             if len(self.loss_vals_all.keys()) > 1:
                 ax.fill_between(it_ave, upper, lower, alpha=alpha, color=ax.get_lines()[-1].get_color())
             ax.set_ylabel(r'$f(x)-f^*$')
-
         
     def plot_distances(self, x_opt=None, log_std=True, markevery=None, alpha=0.25, ax=None, *args, **kwargs):
         if x_opt is None:
