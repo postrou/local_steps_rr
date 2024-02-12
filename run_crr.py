@@ -28,11 +28,11 @@ if __name__ == '__main__':
     L = loss.smoothness()
     l2 = L / np.sqrt(n)
     loss.l2 = l2
-    n_epoch = 600
+    n_epoch = 250
     batch_size = 512
     # n_seeds = 2 # was set to 20 in the paper
     n_seeds = 10
-    stoch_it = 250 * n // batch_size
+    stoch_it = n_epoch * n // batch_size
     trace_len = 300
     if dataset == 'w8a':
         clip_level_list = np.logspace(-3, 2, 6)
