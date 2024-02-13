@@ -7,7 +7,7 @@ from scipy.sparse import csc_matrix, csr_matrix
 from tqdm.auto import tqdm
 
 from datasets import get_dataset
-from first_order import Ig, Nesterov
+from first_order import Ig, Nesterov, ClippedIg
 from loss_functions import LogisticRegression, Quadratic
 from stochastic_first_order import Sgd, Shuffling, ClippedShuffling
 from utils import get_trace, relative_round
@@ -37,7 +37,7 @@ if __name__ == '__main__':
     parser.add_argument('alg', type=str)
     parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--n_epochs', type=int, default=250)
-    parser.add_argument('--x_opt', type=bool, default=False)
+    parser.add_argument('--x_opt', action='store_true')
     args = parser.parse_args()
     alpha_shift = args.alpha
 
@@ -84,9 +84,9 @@ if __name__ == '__main__':
         if not os.path.exists(trace_path):
             os.makedirs(trace_path)
 
-        step_size_list = np.logspace(-3, 0, 4)
+        step_size_list = np.logspace(-5, 0, 6)
         # clip_level_list = np.logspace(-3, 3, 7)
-        clip_level_list = np.logspace(1, 5, 5)
+        clip_level_list = np.logspace(0, 5, 6)
 
     else:
         A, b = get_dataset(dataset)
@@ -120,7 +120,7 @@ if __name__ == '__main__':
         print('Finding optimal solution with FGM')
         nest_str_trace = get_trace(f'{trace_path}nest_str', loss)
         if not nest_str_trace:
-            nest_str = Nesterov(loss=loss, it_max=n_epoch, mu=l2, strongly_convex=True)
+            nest_str = Nesterov(loss=loss, it_max=n_epochs, mu=l2, strongly_convex=True)
             nest_str_trace = nest_str.run(x0=x0)
             nest_str_trace.compute_loss_of_iterates()
             nest_str_trace.save('nest_str', trace_path)
