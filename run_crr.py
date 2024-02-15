@@ -35,11 +35,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', type=str)
     parser.add_argument('alg', type=str)
-    parser.add_argument('--alpha', type=float, default=0.1)
     parser.add_argument('--n_epochs', type=int, default=250)
     parser.add_argument('--x_opt', action='store_true')
     args = parser.parse_args()
-    alpha_shift = args.alpha
 
     # Get data and set all parameters
     print('Loading data')
@@ -126,6 +124,9 @@ if __name__ == '__main__':
             nest_str_trace.save('nest_str', trace_path)
         f_opt = np.min(nest_str_trace.loss_vals)
         x_opt = nest_str_trace.xs[-1]
+
+    print(trace_path)
+    print(plot_path)
 
     algorithm = args.alg
     if algorithm == 'rr':
@@ -230,7 +231,6 @@ if __name__ == '__main__':
         for alpha_shift in tqdm(alpha_shift_list):
             a_crr_shift_traces_dict[alpha_shift] = []
             for clip_level in clip_level_list:
-                print('clip_level')
                 crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}'), loss)
                 if not crr_shift_trace:        
                     cl_crr_shift_traces = []
