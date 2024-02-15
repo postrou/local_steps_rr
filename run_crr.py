@@ -261,6 +261,10 @@ if __name__ == '__main__':
         for alpha, cl_crr_shift_traces in a_crr_shift_traces_dict.items():
             for cl, trace in zip(clip_level_list, cl_crr_shift_traces):
                 print(f'Best step size for alpha {alpha}, clip level {cl}: {trace.step_size}')
+        
+        for alpha_shift in a_crr_shift_traces_dict:
+            for clip_level, crr_shift_trace in zip(clip_level_list, a_crr_shift_traces_dict[alpha_shift]):
+                crr_shift_trace.save(f'c_{clip_level}_a_shift_{alpha_shift}_rr', trace_path)
 
     elif algorithm == 'so':
         print('Single Reshuffling')
