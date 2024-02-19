@@ -79,8 +79,8 @@ class Optimizer:
         self.trace.xs.append(self.x.copy())
         self.trace.ts.append(self.t)
         self.trace.its.append(self.it)
-        self.trace.grad_estimators.append(self.grad_estimator \
-            if self.grad_estimator is not None else self.grad)
+        self.trace.grad_estimators.append(self.loss.norm(self.grad_estimator) \
+            if self.grad_estimator is not None else self.loss.norm(self.grad))
 
         
 class StochasticOptimizer(Optimizer):
