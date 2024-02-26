@@ -1,5 +1,9 @@
 import os
 import argparse
+from multiprocessing import Pool
+from itertools import product
+from functools import partial
+from datetime import datetime
 
 import numpy as np
 import numpy.linalg as la
@@ -29,7 +33,327 @@ def best_trace_by_step_size(traces, step_size_list):
     best_trace = traces[min_i]
     best_trace.step_size = step_size_list[min_i]
     return best_trace
+
+
+def so(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+):
+    so_trace = get_trace(os.path.join(f'{trace_path}', f'so_{n_epochs}'), loss)
+    if not so_trace:
+        so_traces = []
+        for step_size in tqdm(step_size_list):
+            lr0 = step_size
+            so = Shuffling(
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                steps_per_permutation=np.inf, 
+                trace_len=trace_len
+            )
+            so_trace = so.run(x0=x0)
+            so_trace.convert_its_to_epochs(batch_size=batch_size)
+            so_trace.compute_loss_of_iterates()
+            so_traces.append(so_trace)
+        so_trace = best_trace_by_step_size(so_traces, step_size_list)
+    print(f'best step size: {so_trace.step_size}')
+    so_trace.save(f'so_{n_epochs}', trace_path)
+
+
+def sgd(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+):
+    sgd_trace = get_trace(os.path.join(f'{trace_path}', f'sgd_{n_epochs}'), loss)
+    if not sgd_trace:
+        sgd_traces = []
+        for step_size in tqdm(step_size_list):
+            lr0 = step_size
+            sgd = Sgd(
+                loss=loss,
+                lr0=lr0, 
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                avoid_cache_miss=True, 
+                trace_len=trace_len
+            )
+            sgd_trace = sgd.run(x0=x0)
+            sgd_trace.convert_its_to_epochs(batch_size=batch_size)
+            sgd_trace.compute_loss_of_iterates()
+            sgd_traces.append(sgd_trace)
+        sgd_trace = best_trace_by_step_size(sgd_traces, step_size_list)
+    print(f'best step size: {sgd_trace.step_size}')
+    sgd_trace.save(f'sgd_{n_epochs}', trace_path)
+
+
+def ig(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+):
+    ig_trace = get_trace(os.path.join(f'{trace_path}', f'ig_{n_epochs}'), loss)
+    if not ig_trace:
+        ig_traces = []
+        for step_size in tqdm(step_size_list):
+            lr0 = step_size
+            ig = Ig(
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                batch_size=batch_size, 
+                trace_len=trace_len
+            )
+            ig_trace = ig.run(x0=x0)
+            ig_trace.convert_its_to_epochs(batch_size=batch_size)
+            ig_trace.compute_loss_of_iterates()
+            ig_traces.append(ig_trace)
+        ig_trace = best_trace_by_step_size(ig_traces, step_size_list)
+    print(f'best step size: {ig_trace.step_size}')
+    ig_trace.save(f'ig_{n_epochs}', trace_path)
+ 
+
+def rr(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+):
+    rr_trace = get_trace(os.path.join(f'{trace_path}', f'rr_{n_epochs}'), loss)
+    if not rr_trace:
+        rr_traces = []
+        for step_size in tqdm(step_size_list):
+            lr0 = step_size
+            rr = Shuffling(
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                trace_len=trace_len
+            )
+            rr_trace = rr.run(x0=x0)
+            rr_trace.convert_its_to_epochs(batch_size=batch_size)
+            rr_trace.compute_loss_of_iterates()
+            rr_traces.append(rr_trace)
+        rr_trace = best_trace_by_step_size(rr_traces, step_size_list)
+        print(f'Best step size: {rr_trace.step_size}')
+        rr_trace.save(f'rr_{n_epochs}', trace_path)
+
+
+def crr(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+    clip_level
+):
+    crr_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_{n_epochs}'), loss)
+    if not crr_trace:
+        cl_crr_traces = []
+        for step_size in step_size_list:
+            lr0 = step_size
+            crr = ClippedShuffling(
+                loss=loss, 
+                lr0=lr0,
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                trace_len=trace_len,
+                clip_level=clip_level,
+                steps_per_permutation=np.inf
+            )
+            crr_trace = crr.run(x0=x0)
+            crr_trace.convert_its_to_epochs(batch_size=batch_size)
+            crr_trace.compute_loss_of_iterates()
+            crr_trace.compute_last_iterate_grad_norms()
+            cl_crr_traces.append(crr_trace)
+
+        crr_trace = best_trace_by_step_size(cl_crr_traces, step_size_list)
+        print(f'Best step size for clip level {clip_level}: {crr_trace.step_size}')
+        crr_trace.save(f'c_{clip_level}_rr_{n_epochs}', trace_path)
+
+
+def crr_opt(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+    clip_level
+):
+    crr_opt_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_opt_{n_epochs}'), loss)
+    if not crr_opt_trace:
+        cl_crr_opt_traces = []
+        for step_size in step_size_list:
+            lr0 = step_size
+            crr_opt = ClippedShuffling(
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                trace_len=trace_len,
+                clip_level=clip_level,
+                x_opt=x_opt,
+                steps_per_permutation=np.inf
+            )
+            crr_opt_trace = crr_opt.run(x0=x0)
+            crr_opt_trace.convert_its_to_epochs(batch_size=batch_size)
+            crr_opt_trace.compute_loss_of_iterates()
+            crr_opt_trace.compute_last_iterate_grad_norms()
+            cl_crr_opt_traces.append(crr_opt_trace)
+
+        crr_opt_trace = best_trace_by_step_size(cl_crr_opt_traces, step_size_list)
+        print(f'Best step size for clip level {clip_level}: {crr_opt_trace.step_size}')
+        crr_opt_trace.save(f'c_{clip_level}_rr_opt_{n_epochs}', trace_path)
+
+
+def crr_shift(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+    alpha_shift, 
+    clip_level
+):
+    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}'), loss)
+    if not crr_shift_trace:        
+        cl_crr_shift_traces = []
+        for step_size in step_size_list:
+            lr0 = step_size
+            crr_shift = ClippedShuffling(
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                trace_len=trace_len,
+                clip_level=clip_level,
+                alpha_shift=alpha_shift,
+                steps_per_permutation=np.inf
+            )
+            crr_shift_trace = crr_shift.run(x0=x0)
+            crr_shift_trace.convert_its_to_epochs(batch_size=batch_size)
+            crr_shift_trace.compute_loss_of_iterates()
+            crr_shift_trace.compute_last_iterate_grad_norms()
+            cl_crr_shift_traces.append(crr_shift_trace)
+
+        crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
+        print(f'Best step size for alpha {alpha_shift}, clip level {clip_level}: {crr_shift_trace.step_size}')
+        crr_shift_trace.save(f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}', trace_path)
+
+def cig(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+    clip_level
+):
+    cig_trace = get_trace(f'{trace_path}c_{clip_level}_ig_{n_epochs}', loss)
+    if not cig_trace:
+        cl_cig_traces = []
+        for step_size in step_size_list:
+            lr0 = step_size
+            cig = ClippedIg(
+                clip_level,
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                batch_size=batch_size, 
+                trace_len=trace_len
+            )
+            cig_trace = cig.run(x0=x0)
+            cig_trace.convert_its_to_epochs(batch_size=batch_size)
+            cig_trace.compute_loss_of_iterates()
+            cl_cig_traces.append(cig_trace)
     
+        cig_trace = best_trace_by_step_size(cl_cig_traces, step_size_list)
+        print(f'best step size: {cig_trace.step_size}')
+        cig_trace.save(f'c_{clip_level}_ig_{n_epochs}', trace_path)
+ 
+
+def cig_opt(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+    clip_level
+):
+    cig_opt_trace = get_trace(f'{trace_path}c_{clip_level}_ig_opt_{n_epochs}', loss)
+    if not cig_opt_trace:
+        cl_cig_opt_traces = []
+        for step_size in step_size_list:
+            lr0 = step_size
+            cig_opt = ClippedIg(
+                clip_level,
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                batch_size=batch_size, 
+                trace_len=trace_len,
+                x_opt=x_opt
+            )
+            cig_opt_trace = cig_opt.run(x0=x0)
+            cig_opt_trace.convert_its_to_epochs(batch_size=batch_size)
+            cig_opt_trace.compute_loss_of_iterates()
+            cl_cig_opt_traces.append(cig_opt_trace)
+
+        cig_opt_trace = best_trace_by_step_size(cl_cig_opt_traces, step_size_list)
+        print(f'best step size: {cig_opt_trace.step_size}')
+        cig_opt_trace.save(f'c_{clip_level}_ig_opt_{n_epochs}', trace_path)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -37,8 +361,10 @@ if __name__ == '__main__':
     parser.add_argument('alg', type=str)
     parser.add_argument('--n_epochs', type=int, default=250)
     parser.add_argument('--x_opt', action='store_true')
-    parser.add_argument('--cl', type=float, default=None)
-    parser.add_argument('--alpha', type=float, default=None)
+    parser.add_argument('--cl_min', type=int, default=None, help='min clip level in log scale')
+    parser.add_argument('--cl_max', type=int, default=None, help='max clip level in log scale')
+    parser.add_argument('--a_min', type=int, default=None, help='min alpha in log scale')
+    parser.add_argument('--a_max', type=int, default=None, help='max alpha in log scale')
     args = parser.parse_args()
 
     # Get data and set all parameters
@@ -85,9 +411,6 @@ if __name__ == '__main__':
             os.makedirs(trace_path)
 
         step_size_list = np.logspace(-5, 0, 6)
-        # clip_level_list = np.logspace(-3, 3, 7)
-        # if args.cl is None:
-            # clip_level_list = np.logspace(0, 5, 6)
 
     else:
         A, b = get_dataset(dataset)
@@ -103,15 +426,15 @@ if __name__ == '__main__':
         stoch_it = n_epochs * n // batch_size
         trace_len = 300
         if dataset == 'w8a':
-            clip_level_list = np.logspace(-3, 2, 6)
+            # clip_level_list = np.logspace(-3, 2, 6)
             x0 = csc_matrix((dim, 1))
             trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
         elif dataset == 'covtype':
-            clip_level_list = np.logspace(-1, 2, 4)
+            # clip_level_list = np.logspace(-1, 2, 4)
             x0 = csc_matrix(np.random.normal(0, 1, size=(dim, 1)))
             trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}_x0_random/'
         elif dataset == 'gisette':
-            clip_level_list = np.logspace(-1, 2, 4)
+            # clip_level_list = np.logspace(-1, 2, 4)
             x0 = csc_matrix((dim, 1))
             trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
         else:
@@ -132,246 +455,163 @@ if __name__ == '__main__':
     print(plot_path)
 
     algorithm = args.alg
+
     if algorithm == 'rr':
         print('Random Reshuffling')
-        rr_trace = get_trace(os.path.join(f'{trace_path}', f'rr_{n_epochs}'), loss)
-        if not rr_trace:
-            rr_traces = []
-            for step_size in tqdm(step_size_list):
-                lr0 = step_size
-                rr = Shuffling(
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    n_seeds=n_seeds, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len
-                )
-                rr_trace = rr.run(x0=x0)
-                rr_trace.convert_its_to_epochs(batch_size=batch_size)
-                rr_trace.compute_loss_of_iterates()
-                rr_traces.append(rr_trace)
-            rr_trace = best_trace_by_step_size(rr_traces, step_size_list)
-            print(f'Best step size: {rr_trace.step_size}')
-            rr_trace.save(f'rr_{n_epochs}', trace_path)
+        rr(
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
 
     elif algorithm == 'crr':
-        assert args.cl is not None, \
-            f'You did not provide --cl for algorithm {algorithm}'
-        clip_level = args.cl
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
         print('Clipped Random Reshuffling')
-        crr_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_{n_epochs}'), loss)
-        if not crr_trace:
-            cl_crr_traces = []
-            for step_size in step_size_list:
-                lr0 = step_size
-                crr = ClippedShuffling(
-                    loss=loss, 
-                    lr0=lr0,
-                    it_max=stoch_it, 
-                    n_seeds=n_seeds, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len,
-                    clip_level=clip_level,
-                    steps_per_permutation=np.inf
-                )
-                crr_trace = crr.run(x0=x0)
-                crr_trace.convert_its_to_epochs(batch_size=batch_size)
-                crr_trace.compute_loss_of_iterates()
-                crr_trace.compute_last_iterate_grad_norms()
-                cl_crr_traces.append(crr_trace)
-
-            crr_trace = best_trace_by_step_size(cl_crr_traces, step_size_list)
-            print(f'Best step size for clip level {clip_level}: {crr_trace.step_size}')
-            crr_trace.save(f'c_{clip_level}_rr_{n_epochs}', trace_path)
-
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        pool = Pool(min(len(clip_level_list), 50))
+        partial_crr = partial(
+            crr,
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
+        pool.map(partial_crr, clip_level_list)
+        
     elif algorithm == 'crr_opt':
-        assert args.cl is not None, \
-            f'You did not provide --cl for algorithm {algorithm}'
-        clip_level = args.cl
-        crr_opt_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_opt_{n_epochs}'), loss)
-        if not crr_opt_trace:
-            cl_crr_opt_traces = []
-            for step_size in step_size_list:
-                lr0 = step_size
-                crr_opt = ClippedShuffling(
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    n_seeds=n_seeds, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len,
-                    clip_level=clip_level,
-                    x_opt=x_opt,
-                    steps_per_permutation=np.inf
-                )
-                crr_opt_trace = crr_opt.run(x0=x0)
-                crr_opt_trace.convert_its_to_epochs(batch_size=batch_size)
-                crr_opt_trace.compute_loss_of_iterates()
-                crr_opt_trace.compute_last_iterate_grad_norms()
-                cl_crr_opt_traces.append(crr_opt_trace)
-
-            crr_opt_trace = best_trace_by_step_size(cl_crr_opt_traces, step_size_list)
-            print(f'Best step size for clip level {clip_level}: {crr_opt_trace.step_size}')
-            crr_opt_trace.save(f'c_{clip_level}_rr_opt_{n_epochs}', trace_path)
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        pool = Pool(min(len(clip_level_list), 50))
+        partial_crr_opt = partial(
+            crr_opt,
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
+        pool.map(partial_crr_opt, clip_level_list)
 
     elif algorithm == 'crr_shift':
-        assert args.cl is not None, \
-            f'You did not provide --cl for algorithm {algorithm}'
-        assert args.alpha is not None, \
-            f'You did not provide --alpha for algorithm {algorithm}'
-        clip_level = args.cl
-        alpha_shift = args.alpha
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
+        assert args.a_min is not None and args.a_max is not None, \
+            f'You did not provide --a_min or --a_max for algorithm {algorithm}'
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
+        alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
         print('Clipping with shifts')
-        crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}'), loss)
-        if not crr_shift_trace:        
-            cl_crr_shift_traces = []
-            for step_size in step_size_list:
-                lr0 = step_size
-                crr_shift = ClippedShuffling(
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    n_seeds=n_seeds, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len,
-                    clip_level=clip_level,
-                    alpha_shift=alpha_shift,
-                    steps_per_permutation=np.inf
-                )
-                crr_shift_trace = crr_shift.run(x0=x0)
-                crr_shift_trace.convert_its_to_epochs(batch_size=batch_size)
-                crr_shift_trace.compute_loss_of_iterates()
-                crr_shift_trace.compute_last_iterate_grad_norms()
-                cl_crr_shift_traces.append(crr_shift_trace)
-
-            crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
-            print(f'Best step size for alpha {alpha_shift}, clip level {clip_level}: {crr_shift_trace.step_size}')
-            crr_shift_trace.save(f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}', trace_path)
+        pool = Pool(min(len(alpha_cl_list), 50))
+        partial_crr_shift = partial(
+            crr_shift,
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list
+        )
+        pool.starmap(partial_crr_shift, alpha_cl_list)
 
     elif algorithm == 'so':
         print('Single Reshuffling')
-        so_trace = get_trace(os.path.join(f'{trace_path}', f'so_{n_epochs}'), loss)
-        if not so_trace:
-            so_traces = []
-            for step_size in tqdm(step_size_list):
-                lr0 = step_size
-                so = Shuffling(
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    n_seeds=n_seeds, 
-                    batch_size=batch_size, 
-                    steps_per_permutation=np.inf, 
-                    trace_len=trace_len
-                )
-                so_trace = so.run(x0=x0)
-                so_trace.convert_its_to_epochs(batch_size=batch_size)
-                so_trace.compute_loss_of_iterates()
-                so_traces.append(so_trace)
-            so_trace = best_trace_by_step_size(so_traces, step_size_list)
-        print(f'best step size: {so_trace.step_size}')
-        so_trace.save(f'so_{n_epochs}', trace_path)
+        so(
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list
+        )
 
     elif algorithm == 'sgd':
         print('Regular SGD')
-        sgd_trace = get_trace(os.path.join(f'{trace_path}', f'sgd_{n_epochs}'), loss)
-        if not sgd_trace:
-            sgd_traces = []
-            for step_size in tqdm(step_size_list):
-                lr0 = step_size
-                sgd = Sgd(
-                    loss=loss,
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    n_seeds=n_seeds, 
-                    batch_size=batch_size, 
-                    avoid_cache_miss=True, 
-                    trace_len=trace_len
-                )
-                sgd_trace = sgd.run(x0=x0)
-                sgd_trace.convert_its_to_epochs(batch_size=batch_size)
-                sgd_trace.compute_loss_of_iterates()
-                sgd_traces.append(sgd_trace)
-            sgd_trace = best_trace_by_step_size(sgd_traces, step_size_list)
-        print(f'best step size: {sgd_trace.step_size}')
-
-        sgd_trace.save(f'sgd_{n_epochs}', trace_path)
+        sgd(
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
 
     elif algorithm == 'ig':
         print('Deterministic Reshuffling')
-        ig_trace = get_trace(os.path.join(f'{trace_path}', f'ig_{n_epochs}'), loss)
-        if not ig_trace:
-            ig_traces = []
-            for step_size in tqdm(step_size_list):
-                lr0 = step_size
-                ig = Ig(
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len
-                )
-                ig_trace = ig.run(x0=x0)
-                ig_trace.convert_its_to_epochs(batch_size=batch_size)
-                ig_trace.compute_loss_of_iterates()
-                ig_traces.append(ig_trace)
-            ig_trace = best_trace_by_step_size(ig_traces, step_size_list)
-        print(f'best step size: {ig_trace.step_size}')
-
-        ig_trace.save(f'ig_{n_epochs}', trace_path)
+        ig(
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
 
     elif algorithm == 'cig':
-        assert args.cl is not None, \
-            f'You did not provide --cl for algorithm {algorithm}'
-        clip_level = args.cl
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
         print('Clipped Determenistic Reshuffling')
-        cig_trace = get_trace(f'{trace_path}c_{clip_level}_ig_{n_epochs}', loss)
-        if not cig_trace:
-            cl_cig_traces = []
-            for step_size in step_size_list:
-                lr0 = step_size
-                cig = ClippedIg(
-                    clip_level,
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len
-                )
-                cig_trace = cig.run(x0=x0)
-                cig_trace.convert_its_to_epochs(batch_size=batch_size)
-                cig_trace.compute_loss_of_iterates()
-                cl_cig_traces.append(cig_trace)
-        
-            cig_trace = best_trace_by_step_size(cl_cig_traces, step_size_list)
-            print(f'best step size: {cig_trace.step_size}')
-            cig_trace.save(f'c_{clip_level}_ig_{n_epochs}', trace_path)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        pool = Pool(min(len(clip_level_list), 50))
+        partial_cig = partial(
+            cig,
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
+        pool.map(partial_cig, clip_level_list)
 
     elif algorithm == 'cig_opt':
-        assert args.cl is not None, \
-            f'You did not provide --cl for algorithm {algorithm}'
-        clip_level = args.cl
-        cig_opt_traces = []
-        cig_opt_trace = get_trace(f'{trace_path}c_{clip_level}_ig_opt_{n_epochs}', loss)
-        if not cig_opt_trace:
-            cl_cig_opt_traces = []
-            for step_size in step_size_list:
-                lr0 = step_size
-                cig_opt = ClippedIg(
-                    clip_level,
-                    loss=loss, 
-                    lr0=lr0, 
-                    it_max=stoch_it, 
-                    batch_size=batch_size, 
-                    trace_len=trace_len,
-                    x_opt=x_opt
-                )
-                cig_opt_trace = cig_opt.run(x0=x0)
-                cig_opt_trace.convert_its_to_epochs(batch_size=batch_size)
-                cig_opt_trace.compute_loss_of_iterates()
-                cl_cig_opt_traces.append(cig_opt_trace)
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
+        print('Clipped Determenistic Reshuffling')
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        pool = Pool(min(len(clip_level_list), 50))
+        partial_cig_opt = partial(
+            cig_opt,
+            loss,
+            x0, 
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list,
+        )
+        pool.map(partial_cig_opt, clip_level_list)
 
-            cig_opt_trace = best_trace_by_step_size(cl_cig_opt_traces, step_size_list)
-            print(f'best step size: {cig_opt_trace.step_size}')
-            cig_opt_trace.save(f'c_{clip_level}_ig_opt_{n_epochs}', trace_path)
