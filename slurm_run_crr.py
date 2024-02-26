@@ -43,7 +43,7 @@ if __name__ == '__main__':
             # alpha_shift_list = np.logspace(-4, 2, 7)
 
     if alg == 'crr_shift':
-        job_name = f'{alg}_{dataset}_{n_epochs}'
+        job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_{dataset}_{n_epochs}'
         output_name = f'slurm_outputs/{job_name}_{Slurm.JOB_ARRAY_MASTER_ID}_{date}_{h}:{m}:{s}.out'
         if args.gpu:
             slurm = Slurm(
