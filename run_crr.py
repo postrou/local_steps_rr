@@ -189,7 +189,7 @@ if __name__ == '__main__':
         assert args.cl is not None, \
             f'You did not provide --cl for algorithm {algorithm}'
         clip_level = args.cl
-        crr_opt_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_opt_rr_{n_epochs}'), loss)
+        crr_opt_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_opt_{n_epochs}'), loss)
         if not crr_opt_trace:
             cl_crr_opt_traces = []
             for step_size in step_size_list:
