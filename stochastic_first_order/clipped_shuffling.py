@@ -93,7 +93,8 @@ class ClippedShuffling(Shuffling):
                 shift_next = np.transpose(shift + self.alpha_shift * hat_delta) 
                 if scipy.sparse.issparse(shift_next):
                     shift_next = shift_next.toarray()
-                self.shifts[id_shift] = shift_next
+                id_shift_next = (id_shift + 1) / len(self.shifts)
+                self.shifts[id_shift_next] = shift_next
             else:
                 self.grad_estimator = self.clip(self.grad)
         else:
