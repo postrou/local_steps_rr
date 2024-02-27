@@ -367,6 +367,17 @@ if __name__ == '__main__':
     parser.add_argument('--a_max', type=int, default=None, help='max alpha in log scale')
     args = parser.parse_args()
 
+    # args = parser.parse_args([
+    #     'quadratic_noised', 
+    #     'crr_shift',
+    #     '--n_epochs', '10000',
+    #     '--x_opt',
+    #     '--cl_min', '-3',
+    #     '--cl_max', '6',
+    #     '--a_min', '-4',
+    #     '--a_max', '2'
+    #     ])
+
     # Get data and set all parameters
     print('Loading data')
     dataset = args.dataset
