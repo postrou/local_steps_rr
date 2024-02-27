@@ -22,6 +22,7 @@ class Trace:
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
         self.grad_estimators = []
+        self.shift_grad_opt_diffs = []
         
     def compute_loss_of_iterates(self):
         if self.loss_vals is None:
@@ -106,6 +107,7 @@ class StochasticTrace:
         self.loss_is_computed = False
         self.step_size = None
         self.grad_estimators_all = {}
+        self.shift_grad_opt_diffs_all = {}
         
     def init_seed(self):
         self.xs = []
@@ -113,6 +115,7 @@ class StochasticTrace:
         self.its = []
         self.loss_vals = None
         self.grad_estimators = []
+        self.shift_grad_opt_diffs = []
         
     def append_seed_results(self, seed):
         self.xs_all[seed] = self.xs.copy()
@@ -120,6 +123,7 @@ class StochasticTrace:
         self.its_all[seed] = self.its.copy()
         self.loss_vals_all[seed] = self.loss_vals.copy() if self.loss_vals else None
         self.grad_estimators_all[seed] = self.grad_estimators.copy()
+        self.shift_grad_opt_diffs_all[seed] = self.shift_grad_opt_diffs.copy()
     
     def compute_loss_of_iterates(self):
         for seed, loss_vals in self.loss_vals_all.items():
