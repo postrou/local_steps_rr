@@ -131,3 +131,103 @@ class ClippedShuffling(Shuffling):
         
     def clip(self, grad):
         return min(1, self.clip_level / self.loss.norm(grad)) * grad
+
+
+class ClippedShuffling2(ClippedShuffling):
+    """
+    Shuffling-based stochastic gradient descent with decreasing or constant learning rate.
+    
+    Arguments:
+        lr (float, optional): an estimate of the inverse smoothness constant
+    """
+    def __init__(
+        self, 
+        *args, 
+        **kwargs
+    ):
+        super().__init__(
+            *args,
+            **kwargs
+            )
+        self.prev_grad = None
+       
+    def step(self):
+        if self.it % self.steps_per_permutation == 0:
+            # for shuffle once it enters here only on the 0-th iteration
+            self.permutation = np.random.permutation(self.loss.n)
+            self.i = 0
+            self.sampled_permutations += 1
+        if self.steps_per_permutation is np.inf:
+            idx_perm = np.arange(self.i, self.i + self.batch_size)
+            idx_perm %= self.loss.n
+            normalization = self.batch_size
+        else:
+            idx_perm = np.arange(self.i, min(self.loss.n, self.i+self.batch_size))
+            normalization = self.loss.n / self.steps_per_permutation #works only for RR
+        idx = self.permutation[idx_perm]
+        self.i += self.batch_size
+        self.i %= self.loss.n
+        # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
+        # any incomplete minibatch should be normalized by batch_size
+        self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
+
+        denom_const = 1 / self.lr0
+        lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
+        self.lr = min(lr_decayed, self.lr_max)
+
+        if self.prev_grad is None:
+            self.grad_estimator = self.clip(self.grad)
+        else:
+            self.grad_estimator = self.prev_grad + self.clip(self.grad - self.prev_grad)
+
+        self.x -= self.lr * self.grad_estimator
+
+
+class ClippedShuffling3(ClippedShuffling):
+    """
+    Shuffling-based stochastic gradient descent with decreasing or constant learning rate.
+    
+    Arguments:
+        lr (float, optional): an estimate of the inverse smoothness constant
+    """
+    def __init__(
+        self, 
+        *args, 
+        **kwargs
+    ):
+        super().__init__(
+            *args,
+            **kwargs
+            )
+        self.prev_grad = None
+       
+    def step(self):
+        if self.it % self.steps_per_permutation == 0:
+            # for shuffle once it enters here only on the 0-th iteration
+            self.permutation = np.random.permutation(self.loss.n)
+            self.i = 0
+            self.sampled_permutations += 1
+        if self.steps_per_permutation is np.inf:
+            idx_perm = np.arange(self.i, self.i + self.batch_size)
+            idx_perm %= self.loss.n
+            normalization = self.batch_size
+        else:
+            idx_perm = np.arange(self.i, min(self.loss.n, self.i+self.batch_size))
+            normalization = self.loss.n / self.steps_per_permutation #works only for RR
+        idx = self.permutation[idx_perm]
+        self.i += self.batch_size
+        self.i %= self.loss.n
+        # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
+        # any incomplete minibatch should be normalized by batch_size
+        self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
+
+        denom_const = 1 / self.lr0
+        lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
+        self.lr = min(lr_decayed, self.lr_max)
+
+        if self.grad_estimator is None and self.prev_grad is None:
+            self.grad_estimator = self.clip(self.grad)
+        else:
+            self.grad_estimator = self.grad_estimator + self.clip(self.grad - self.prev_grad)
+
+        self.x -= self.lr * self.grad_estimator
