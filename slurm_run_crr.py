@@ -42,8 +42,15 @@ if __name__ == '__main__':
                 f'You did not provide --a_min or --a_max for algorithm {alg}'
             # alpha_shift_list = np.logspace(-4, 2, 7)
 
-    if alg == 'crr_shift':
-        job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_{dataset}_{n_epochs}'
+    if alg.startswith('crr_shift'):
+        if alg == 'crr_shift':
+            job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_{dataset}_{n_epochs}'
+        elif alg == 'crr_shift_2':
+            job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_2_{dataset}_{n_epochs}'
+        elif alg == 'crr_shift_3':
+            job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_3_{dataset}_{n_epochs}'
+        else:
+            raise NotImplementedError()
         output_name = f'slurm_outputs/{job_name}_{Slurm.JOB_ARRAY_MASTER_ID}_{date}_{h}:{m}:{s}.out'
         if args.gpu:
             slurm = Slurm(
