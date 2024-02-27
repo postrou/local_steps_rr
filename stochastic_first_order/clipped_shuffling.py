@@ -179,6 +179,7 @@ class ClippedShuffling2(ClippedShuffling):
             self.grad_estimator = self.clip(self.grad)
         else:
             self.grad_estimator = self.prev_grad + self.clip(self.grad - self.prev_grad)
+        self.prev_grad = self.grad.copy()
 
         self.x -= self.lr * self.grad_estimator
 
@@ -229,5 +230,6 @@ class ClippedShuffling3(ClippedShuffling):
             self.grad_estimator = self.clip(self.grad)
         else:
             self.grad_estimator = self.grad_estimator + self.clip(self.grad - self.prev_grad)
+        self.prev_grad = self.grad.copy()
 
         self.x -= self.lr * self.grad_estimator
