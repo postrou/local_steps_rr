@@ -209,6 +209,7 @@ def crr(
 def crr_opt(
     loss,
     x0, 
+    x_opt,
     n_epochs, 
     stoch_it, 
     n_seeds, 
@@ -216,7 +217,7 @@ def crr_opt(
     trace_path, 
     batch_size, 
     step_size_list,
-    clip_level
+    clip_level,
 ):
     crr_opt_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_opt_{n_epochs}'), loss)
     if not crr_opt_trace:
@@ -248,6 +249,7 @@ def crr_opt(
 def crr_shift(
     loss,
     x0, 
+    x_opt,
     n_epochs, 
     stoch_it, 
     n_seeds, 
@@ -256,7 +258,7 @@ def crr_shift(
     batch_size, 
     step_size_list,
     alpha_shift, 
-    clip_level
+    clip_level,
 ):
     crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}'), loss)
     if not crr_shift_trace:        
@@ -272,7 +274,8 @@ def crr_shift(
                 trace_len=trace_len,
                 clip_level=clip_level,
                 alpha_shift=alpha_shift,
-                steps_per_permutation=np.inf
+                steps_per_permutation=np.inf,
+                x_opt=x_opt
             )
             crr_shift_trace = crr_shift.run(x0=x0)
             crr_shift_trace.convert_its_to_epochs(batch_size=batch_size)
@@ -322,6 +325,7 @@ def cig(
 def cig_opt(
     loss,
     x0, 
+    x_opt,
     n_epochs, 
     stoch_it, 
     n_seeds, 
@@ -395,7 +399,8 @@ if __name__ == '__main__':
         else:
             x0 = np.array([3 * 1e4])        
         n_epochs = args.n_epochs
-        batch_size = 32
+        # batch_size = 32
+        batch_size = 1
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
@@ -499,6 +504,7 @@ if __name__ == '__main__':
             crr_opt,
             loss,
             x0, 
+            x_opt,
             n_epochs, 
             stoch_it, 
             n_seeds, 
@@ -523,6 +529,7 @@ if __name__ == '__main__':
             crr_shift,
             loss,
             x0, 
+            x_opt,
             n_epochs, 
             stoch_it, 
             n_seeds, 
@@ -605,6 +612,7 @@ if __name__ == '__main__':
             cig_opt,
             loss,
             x0, 
+            x_opt,
             n_epochs, 
             stoch_it, 
             n_seeds, 
