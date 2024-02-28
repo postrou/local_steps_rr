@@ -504,7 +504,7 @@ if __name__ == '__main__':
         if not os.path.exists(trace_path):
             os.makedirs(trace_path)
 
-        step_size_list = np.logspace(-5, 0, 6)
+        step_size_list = np.logspace(-5, -1, 5)
 
     else:
         A, b = get_dataset(dataset)
