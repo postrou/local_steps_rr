@@ -298,10 +298,9 @@ def crr_shift_2(
     trace_path, 
     batch_size, 
     step_size_list,
-    alpha_shift, 
     clip_level,
 ):
-    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_a_shift_{alpha_shift}_rr_2_{n_epochs}'), loss)
+    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_shift_rr_2_{n_epochs}'), loss)
     if not crr_shift_trace:        
         cl_crr_shift_traces = []
         for step_size in step_size_list:
@@ -314,7 +313,6 @@ def crr_shift_2(
                 batch_size=batch_size, 
                 trace_len=trace_len,
                 clip_level=clip_level,
-                alpha_shift=alpha_shift,
                 steps_per_permutation=np.inf,
                 x_opt=x_opt
             )
@@ -325,8 +323,8 @@ def crr_shift_2(
             cl_crr_shift_traces.append(crr_shift_trace)
 
         crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
-        print(f'Best step size for alpha {alpha_shift}, clip level {clip_level}: {crr_shift_trace.step_size}')
-        crr_shift_trace.save(f'c_{clip_level}_a_shift_{alpha_shift}_rr_2_{n_epochs}', trace_path)
+        print(f'Best step size for clip level {clip_level}: {crr_shift_trace.step_size}')
+        crr_shift_trace.save(f'c_{clip_level}_shift_rr_2_{n_epochs}', trace_path)
 
 def crr_shift_3(
     loss,
@@ -339,10 +337,9 @@ def crr_shift_3(
     trace_path, 
     batch_size, 
     step_size_list,
-    alpha_shift, 
     clip_level,
 ):
-    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_a_shift_{alpha_shift}_rr_3_{n_epochs}'), loss)
+    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_shift_rr_3_{n_epochs}'), loss)
     if not crr_shift_trace:        
         cl_crr_shift_traces = []
         for step_size in step_size_list:
@@ -355,7 +352,6 @@ def crr_shift_3(
                 batch_size=batch_size, 
                 trace_len=trace_len,
                 clip_level=clip_level,
-                alpha_shift=alpha_shift,
                 steps_per_permutation=np.inf,
                 x_opt=x_opt
             )
@@ -366,8 +362,8 @@ def crr_shift_3(
             cl_crr_shift_traces.append(crr_shift_trace)
 
         crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
-        print(f'Best step size for alpha {alpha_shift}, clip level {clip_level}: {crr_shift_trace.step_size}')
-        crr_shift_trace.save(f'c_{clip_level}_a_shift_{alpha_shift}_rr_3_{n_epochs}', trace_path)
+        print(f'Best step size for clip level {clip_level}: {crr_shift_trace.step_size}')
+        crr_shift_trace.save(f'c_{clip_level}_shift_rr_3_{n_epochs}', trace_path)
 
 def cig(
     loss,
@@ -636,13 +632,10 @@ if __name__ == '__main__':
     elif algorithm == 'crr_shift_2':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
-        assert args.a_min is not None and args.a_max is not None, \
-            f'You did not provide --a_min or --a_max for algorithm {algorithm}'
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-        alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
-        alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
         print('Clipping with shifts, version 2')
-        pool = Pool(min(len(alpha_cl_list), 50))
+        # pool = Pool(min(len(alpha_cl_list), 50))
+        pool = Pool(min(len(clip_level_list), 50))
         partial_crr_shift = partial(
             crr_shift_2,
             loss,
@@ -656,18 +649,14 @@ if __name__ == '__main__':
             batch_size, 
             step_size_list
         )
-        pool.starmap(partial_crr_shift, alpha_cl_list)
+        pool.starmap(partial_crr_shift, clip_level_list)
 
     elif algorithm == 'crr_shift_3':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {algorithm}'
-        assert args.a_min is not None and args.a_max is not None, \
-            f'You did not provide --a_min or --a_max for algorithm {algorithm}'
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-        alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
-        alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
         print('Clipping with shifts, version 3')
-        pool = Pool(min(len(alpha_cl_list), 50))
+        pool = Pool(min(len(clip_level_list), 50))
         partial_crr_shift = partial(
             crr_shift_3,
             loss,
@@ -681,7 +670,7 @@ if __name__ == '__main__':
             batch_size, 
             step_size_list
         )
-        pool.starmap(partial_crr_shift, alpha_cl_list)
+        pool.starmap(partial_crr_shift, clip_level_list)
 
     elif algorithm == 'so':
         print('Single Reshuffling')
