@@ -492,8 +492,8 @@ if __name__ == '__main__':
         else:
             x0 = np.array([3 * 1e4])        
         n_epochs = args.n_epochs
-        # batch_size = 32
-        batch_size = 1
+        batch_size = 32
+        # batch_size = 1
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
