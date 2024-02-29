@@ -72,8 +72,8 @@ class ClippedShuffling(Shuffling):
                     idx=idx, 
                     normalization=normalization
                 )
-                shift_i = self.shifts[i]
-                shift_grad_opt_diff += self.loss.norm(shift_i - grad_opt) ** 2
+                shift = self.shifts[i]
+                shift_grad_opt_diff += self.loss.norm(shift - grad_opt) ** 2
             shift_grad_opt_diff /= len(self.shifts)
             self.trace.shift_grad_opt_diffs.append(shift_grad_opt_diff)
         
@@ -111,11 +111,10 @@ class ClippedShuffling(Shuffling):
 
             hat_delta = self.clip(self.grad - shift)
             self.grad_estimator = shift + hat_delta
-            shift_next = np.transpose(shift + self.alpha_shift * hat_delta) 
-            if scipy.sparse.issparse(shift_next):
-                shift_next = shift_next.toarray()
-            id_shift_next = (id_shift + 1) % len(self.shifts)
-            self.shifts[id_shift_next] = shift_next
+            shift_next_epoch = np.transpose(shift + self.alpha_shift * hat_delta) 
+            if scipy.sparse.issparse(shift_next_epoch):
+                shift_next_epoch = shift_next_epoch.toarray()
+            self.shifts[id_shift] = shift_next_epoch
         elif self.x_opt is None:
             self.grad_estimator = self.clip(self.grad)
         else:
@@ -149,7 +148,7 @@ class ClippedShuffling2(ClippedShuffling):
             *args,
             **kwargs
             )
-        self.prev_grad = None
+        self.x_prev = None
        
     def step(self):
         if self.it % self.steps_per_permutation == 0:
@@ -169,17 +168,26 @@ class ClippedShuffling2(ClippedShuffling):
         self.i %= self.loss.n
         # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
         # any incomplete minibatch should be normalized by batch_size
-        self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
+        self.grad = self.loss.stochastic_gradient(
+            self.x, 
+            idx=idx, 
+            normalization=normalization
+        )
 
         denom_const = 1 / self.lr0
         lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
         self.lr = min(lr_decayed, self.lr_max)
 
-        if self.prev_grad is None:
+        if self.x_prev is None:
             self.grad_estimator = self.clip(self.grad)
         else:
-            self.grad_estimator = self.prev_grad + self.clip(self.grad - self.prev_grad)
-        self.prev_grad = self.grad.copy()
+            grad_x_prev = self.loss.stochastic_gradient(
+                self.x_prev,
+                idx=idx,
+                normalization=normalization
+            )
+            self.grad_estimator = grad_x_prev + self.clip(self.grad - grad_x_prev)
+        self.x_prev = self.x.copy()
 
         self.x -= self.lr * self.grad_estimator
 
@@ -200,7 +208,7 @@ class ClippedShuffling3(ClippedShuffling):
             *args,
             **kwargs
             )
-        self.prev_grad = None
+        self.x_prev = None
        
     def step(self):
         if self.it % self.steps_per_permutation == 0:
@@ -226,10 +234,15 @@ class ClippedShuffling3(ClippedShuffling):
         lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
         self.lr = min(lr_decayed, self.lr_max)
 
-        if self.grad_estimator is None and self.prev_grad is None:
+        if self.grad_estimator is None and self.x_prev is None:
             self.grad_estimator = self.clip(self.grad)
         else:
-            self.grad_estimator = self.grad_estimator + self.clip(self.grad - self.prev_grad)
-        self.prev_grad = self.grad.copy()
+            grad_x_prev = self.loss.stochastic_gradient(
+                self.x_prev,
+                idx=idx,
+                normalization=normalization
+            )
+            self.grad_estimator = self.grad_estimator + self.clip(self.grad - grad_x_prev)
+        self.x_prev = self.x.copy()
 
         self.x -= self.lr * self.grad_estimator
