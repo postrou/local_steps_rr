@@ -488,8 +488,8 @@ if __name__ == '__main__':
         else:
             x0 = np.array([3 * 1e4])        
         n_epochs = args.n_epochs
-        # batch_size = 32
-        batch_size = 1
+        batch_size = 32
+        # batch_size = 1
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
@@ -649,7 +649,8 @@ if __name__ == '__main__':
             batch_size, 
             step_size_list
         )
-        pool.starmap(partial_crr_shift, clip_level_list)
+        # partial_crr_shift(clip_level_list[0])
+        pool.map(partial_crr_shift, clip_level_list)
 
     elif algorithm == 'crr_shift_3':
         assert args.cl_min is not None and args.cl_max is not None, \
@@ -670,7 +671,8 @@ if __name__ == '__main__':
             batch_size, 
             step_size_list
         )
-        pool.starmap(partial_crr_shift, clip_level_list)
+        # pool.starmap(partial_crr_shift, clip_level_list)
+        pool.map(partial_crr_shift, clip_level_list)
 
     elif algorithm == 'so':
         print('Single Reshuffling')

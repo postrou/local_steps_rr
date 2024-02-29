@@ -46,9 +46,9 @@ if __name__ == '__main__':
         if alg == 'crr_shift':
             job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_{dataset}_{n_epochs}'
         elif alg == 'crr_shift_2':
-            job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_2_{dataset}_{n_epochs}'
+            job_name = f'c{cl_min}_{cl_max}_shift_rr_2_{dataset}_{n_epochs}'
         elif alg == 'crr_shift_3':
-            job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_3_{dataset}_{n_epochs}'
+            job_name = f'c{cl_min}_{cl_max}_shift_rr_3_{dataset}_{n_epochs}'
         else:
             raise NotImplementedError()
         output_name = f'slurm_outputs/{job_name}_{Slurm.JOB_ARRAY_MASTER_ID}_{date}_{h}:{m}:{s}.out'
@@ -82,9 +82,9 @@ if __name__ == '__main__':
             '--x_opt' if is_x_opt else '',
             f'--cl_min {cl_min}',
             f'--cl_max {cl_max}',
-            f'--a_min {a_min}',
-            f'--a_max {a_max}'
         ]
+        if a_min is not None and a_max is not None:
+            script_args.append(f'--a_min {a_min}', f'--a_max {a_max}')
         slurm.sbatch(f"python run_crr.py {' '.join(script_args)}")
 
     elif alg.startswith('crr') or alg.startswith('cig'):
