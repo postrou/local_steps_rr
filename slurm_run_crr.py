@@ -84,7 +84,7 @@ if __name__ == '__main__':
             f'--cl_max {cl_max}',
         ]
         if a_min is not None and a_max is not None:
-            script_args.append(f'--a_min {a_min}', f'--a_max {a_max}')
+            script_args += [f'--a_min {a_min}', f'--a_max {a_max}']
         slurm.sbatch(f"python run_crr.py {' '.join(script_args)}")
 
     elif alg.startswith('crr') or alg.startswith('cig'):
