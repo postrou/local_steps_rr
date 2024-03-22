@@ -298,7 +298,7 @@ class ClippedShufflingOPTF(ClippedShuffling):
         return min(1, self.clip_level / self.loss.norm(grad)) * grad
 
 
-class ClippedShufflingMean(Shuffling):
+class ClippedShufflingMean(ClippedShuffling):
     """
     Shuffling-based stochastic gradient descent with decreasing or constant learning rate.
     
