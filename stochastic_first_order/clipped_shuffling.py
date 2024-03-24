@@ -314,6 +314,7 @@ class ClippedShufflingMean(ClippedShuffling):
             *args,
             **kwargs
             )
+        assert self.alpha_shift is not None
     
     def step(self):
         if self.it % self.steps_per_permutation == 0:
@@ -339,31 +340,88 @@ class ClippedShufflingMean(ClippedShuffling):
         lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
         self.lr = min(lr_decayed, self.lr_max)
        
-        if self.alpha_shift > 0:
-            id_shift = self.it % len(self.shifts)
-            shift = self.shifts[id_shift]
-            if not np.isscalar(self.grad):
-                shift = shift.reshape(-1, 1)
-            if scipy.sparse.issparse(self.grad):
-                shift = scipy.sparse.csr_matrix(shift)
+        id_shift = self.it % len(self.shifts)
+        shift = self.shifts[id_shift]
+        if not np.isscalar(self.grad):
+            shift = shift.reshape(-1, 1)
+        if scipy.sparse.issparse(self.grad):
+            shift = scipy.sparse.csr_matrix(shift)
 
-            hat_delta = self.clip(self.grad - shift)
-            self.grad_estimator = shift + hat_delta
-            shift_mean = self.shifts.mean()
-            shift_next_epoch = np.transpose(shift_mean + self.alpha_shift * hat_delta) 
-            if scipy.sparse.issparse(shift_next_epoch):
-                shift_next_epoch = shift_next_epoch.toarray()
-            self.shifts[id_shift] = shift_next_epoch
-        elif self.x_opt is None:
-            self.grad_estimator = self.clip(self.grad)
+        hat_delta = self.clip(self.grad - shift)
+        self.grad_estimator = shift + hat_delta
+        shift_mean = self.shifts.mean()
+        shift_next_epoch = np.transpose(shift_mean + self.alpha_shift * hat_delta) 
+        if scipy.sparse.issparse(shift_next_epoch):
+            shift_next_epoch = shift_next_epoch.toarray()
+        self.shifts[id_shift] = shift_next_epoch
+
+        self.x -= self.lr * self.grad_estimator
+        
+    def clip(self, grad):
+        return min(1, self.clip_level / self.loss.norm(grad)) * grad
+
+
+class ClippedShufflingSAGA(ClippedShuffling):
+    """
+    Shuffling-based stochastic gradient descent with decreasing or constant learning rate.
+    
+    Arguments:
+        lr (float, optional): an estimate of the inverse smoothness constant
+    """
+    def __init__(
+        self, 
+        *args, 
+        **kwargs
+    ):
+        super().__init__(
+            *args,
+            **kwargs
+            )
+        self.shifts_next_epoch = np.zeros_like(self.shifts)
+        assert self.alpha_shift is not None
+    
+    def step(self):
+        if self.it % self.steps_per_permutation == 0:
+            # for shuffle once it enters here only on the 0-th iteration
+            self.permutation = np.random.permutation(self.loss.n)
+            self.i = 0
+            self.sampled_permutations += 1
+        if self.steps_per_permutation is np.inf:
+            idx_perm = np.arange(self.i, self.i + self.batch_size)
+            idx_perm %= self.loss.n
+            normalization = self.batch_size
         else:
-            grad_opt = self.loss.stochastic_gradient(self.x_opt, idx=idx, normalization=normalization)
-            if self.use_new_opt:
-                self.x_opt_i -= self.lr * self.clip(grad_opt)
-                grad_opt_i = self.loss.stochastic_gradient(self.x_opt_i, idx=idx, normalization=normalization)
-                self.grad_estimator = grad_opt_i + self.clip(self.grad - grad_opt_i)
-            else:
-                self.grad_estimator = grad_opt + self.clip(self.grad - grad_opt)
+            idx_perm = np.arange(self.i, min(self.loss.n, self.i+self.batch_size))
+            normalization = self.loss.n / self.steps_per_permutation #works only for RR
+        idx = self.permutation[idx_perm]
+        self.i += self.batch_size
+        if self.i >= self.loss.n:
+            self.shifts = self.shifts_next_epoch
+            self.shifts_next_epoch = np.zeros_like(self.shifts)
+        self.i %= self.loss.n
+        # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
+        # any incomplete minibatch should be normalized by batch_size
+        self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
+
+        denom_const = 1 / self.lr0
+        lr_decayed = 1 / (denom_const + self.lr_decay_coef*max(0, self.it-self.it_start_decay)**self.lr_decay_power)
+        self.lr = min(lr_decayed, self.lr_max)
+       
+        id_shift = self.it % len(self.shifts)
+        shift = self.shifts[id_shift]
+        if not np.isscalar(self.grad):
+            shift = shift.reshape(-1, 1)
+        if scipy.sparse.issparse(self.grad):
+            shift = scipy.sparse.csr_matrix(shift)
+
+        shift_next_epoch = self.grad
+        self.shifts_next_epoch[id_shift] = shift_next_epoch
+        tilde_shift = 1 / len(self.shifts) * \
+            (self.shifts_next_epoch[:id_shift + 1].sum() + self.shifts[id_shift + 1:].sum())
+        hat_delta = self.clip(self.grad - shift)
+        self.grad_estimator = tilde_shift + hat_delta
+        if scipy.sparse.issparse(shift_next_epoch):
+            shift_next_epoch = shift_next_epoch.toarray()
 
         self.x -= self.lr * self.grad_estimator
         

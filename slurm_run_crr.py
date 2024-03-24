@@ -53,6 +53,8 @@ if __name__ == '__main__':
             job_name = f'c{cl_min}_{cl_max}_shift_rr_opt_full_{dataset}_{n_epochs}'
         elif alg == 'crr_shift_mean':
             job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_mean_rr_{dataset}_{n_epochs}'
+        elif alg == 'crr_shift_saga':
+            job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_saga_rr_{dataset}_{n_epochs}'
         else:
             raise NotImplementedError()
         output_name = f'slurm_outputs/{job_name}_{Slurm.JOB_ARRAY_MASTER_ID}_{date}_{h}:{m}:{s}.out'
