@@ -133,3 +133,5 @@ dmypy.json
 *.png
 *.pdf
 results/*
+slurm_outputs/*
+datasets/*
