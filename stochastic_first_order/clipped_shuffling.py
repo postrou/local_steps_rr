@@ -425,5 +425,3 @@ class ClippedShufflingSAGA(ClippedShuffling):
 
         self.x -= self.lr * self.grad_estimator
         
-    def clip(self, grad):
-        return min(1, self.clip_level / self.loss.norm(grad)) * grad
