@@ -47,6 +47,8 @@ if __name__ == '__main__':
             job_name = f'c{cl_min}_{cl_max}_a_{a_min}_{a_max}_rr_{dataset}_{n_epochs}'
         elif alg == 'crr_shift_2':
             job_name = f'c{cl_min}_{cl_max}_shift_rr_2_{dataset}_{n_epochs}'
+        elif alg == 'crr_shift_2_1':
+            job_name = f'c{cl_min}_{cl_max}_shift_rr_2.1_{dataset}_{n_epochs}'
         elif alg == 'crr_shift_3':
             job_name = f'c{cl_min}_{cl_max}_shift_rr_3_{dataset}_{n_epochs}'
         elif alg == 'crr_shift_optf':
