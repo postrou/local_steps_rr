@@ -1,6 +1,6 @@
 import numpy as np
 
-from optimizer import Optimizer
+from src.optimizers.optimizer import Optimizer
 
 
 class Nesterov(Optimizer):

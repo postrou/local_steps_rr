@@ -16,7 +16,7 @@ from loss_functions import LogisticRegression, Quadratic
 from stochastic_first_order import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
         ClippedShufflingMean, ClippedShufflingSAGA
-from utils import get_trace, relative_round
+from src.utils import get_trace, relative_round
 
 
 def best_trace_by_step_size(traces, step_size_list):
