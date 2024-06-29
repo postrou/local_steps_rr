@@ -12,11 +12,12 @@ from tqdm.auto import tqdm
 
 from datasets import get_dataset
 from first_order import Ig, Nesterov, ClippedIg
-from loss_functions import LogisticRegression, Quadratic
-from stochastic_first_order import Sgd, Shuffling, ClippedShuffling, \
+from src.loss_functions import LogisticRegression, Quadratic
+from src.optimizers import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
         ClippedShufflingMean, ClippedShufflingSAGA
 from src.utils import get_trace, relative_round
+        ClippedShufflingMean, ClippedShufflingSAGA, ClippedShuffling2_1
 
 
 def best_trace_by_step_size(traces, step_size_list):
@@ -289,6 +290,7 @@ def crr_shift(
         print(f'Best step size for alpha {alpha_shift}, clip level {clip_level}: {crr_shift_trace.step_size}')
         crr_shift_trace.save(f'c_{clip_level}_a_shift_{alpha_shift}_rr_{n_epochs}', trace_path)
 
+
 def crr_shift_2(
     loss,
     x0, 
@@ -327,6 +329,47 @@ def crr_shift_2(
         crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
         print(f'Best step size for clip level {clip_level}: {crr_shift_trace.step_size}')
         crr_shift_trace.save(f'c_{clip_level}_shift_rr_2_{n_epochs}', trace_path)
+
+
+def crr_shift_2_1(
+    loss,
+    x0, 
+    x_opt,
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size_list,
+    clip_level,
+):
+    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_shift_rr_2.1_{n_epochs}'), loss)
+    if not crr_shift_trace:        
+        cl_crr_shift_traces = []
+        for step_size in step_size_list:
+            lr0 = step_size
+            crr_shift = ClippedShuffling2_1(
+                loss=loss, 
+                lr0=lr0, 
+                it_max=stoch_it, 
+                n_seeds=n_seeds, 
+                batch_size=batch_size, 
+                trace_len=trace_len,
+                clip_level=clip_level,
+                steps_per_permutation=np.inf,
+                x_opt=x_opt
+            )
+            crr_shift_trace = crr_shift.run(x0=x0)
+            crr_shift_trace.convert_its_to_epochs(batch_size=batch_size)
+            crr_shift_trace.compute_loss_of_iterates()
+            crr_shift_trace.compute_last_iterate_grad_norms()
+            cl_crr_shift_traces.append(crr_shift_trace)
+
+        crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
+        print(f'Best step size for clip level {clip_level}: {crr_shift_trace.step_size}')
+        crr_shift_trace.save(f'c_{clip_level}_shift_rr_2.1_{n_epochs}', trace_path)
+
 
 def crr_shift_3(
     loss,
@@ -762,6 +805,29 @@ if __name__ == '__main__':
         pool = Pool(min(len(clip_level_list), 50))
         partial_crr_shift = partial(
             crr_shift_2,
+            loss,
+            x0, 
+            x_opt,
+            n_epochs, 
+            stoch_it, 
+            n_seeds, 
+            trace_len, 
+            trace_path, 
+            batch_size, 
+            step_size_list
+        )
+        # partial_crr_shift(clip_level_list[0])
+        pool.map(partial_crr_shift, clip_level_list)
+
+    elif alg == 'crr_shift_2_1':
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        print('Clipping with shifts, version 2.1')
+        # pool = Pool(min(len(alpha_cl_list), 50))
+        pool = Pool(min(len(clip_level_list), 50))
+        partial_crr_shift = partial(
+            crr_shift_2_1,
             loss,
             x0, 
             x_opt,
