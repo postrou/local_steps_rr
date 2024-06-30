@@ -130,8 +130,11 @@ dmypy.json
 
 # Not needed files
 .DS_Store
+.vscode/*
 *.png
 *.pdf
 results/*
 slurm_outputs/*
 datasets/*
+tex/*
+ideas/*
