@@ -12,8 +12,8 @@ class FourthOrder(Oracle):
         self.dim = 1
         self.x_last = 0.
 
-        self.x_opt = np.mean(x)
-        self.f_opt = self.value(self.x_opt)
+        self.x_opt = None
+        self.f_opt = None
 
     def value(self, x):
         y = np.mean([(x - x_0) ** 4 for x_0 in self.x])
