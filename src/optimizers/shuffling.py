@@ -13,7 +13,7 @@ class Shuffling(StochasticOptimizer):
     """
     def __init__(self, steps_per_permutation=None, lr0=None, lr_max=np.inf, lr_decay_coef=0,
                  lr_decay_power=1, it_start_decay=None, batch_size=1, *args, **kwargs):
-        super(Shuffling, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.steps_per_permutation = steps_per_permutation if steps_per_permutation else math.ceil(self.loss.n/batch_size)
         self.lr0 = lr0
         self.lr_max = lr_max
@@ -57,6 +57,6 @@ class Shuffling(StochasticOptimizer):
         return idx, normalization
 
     def init_run(self, *args, **kwargs):
-        super(Shuffling, self).init_run(*args, **kwargs)
+        super().init_run(*args, **kwargs)
         if self.lr0 is None:
             raise Exception('lr0 is not specified!')
