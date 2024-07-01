@@ -26,7 +26,23 @@ class Shuffling(StochasticOptimizer):
         self.sampled_permutations = 0
         
     def step(self):
+        idx, normalization = self.permute()
+        self.i += self.batch_size
+        self.i %= self.loss.n
+        # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
+        #   any incomplete minibatch should be normalized by batch_size
+        self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
+       
+        denom_const = 1 / self.lr0
+        lr_decayed = \
+            1 / (denom_const + self.lr_decay_coef * max(0, self.it - self.it_start_decay) ** self.lr_decay_power)
+        self.lr = min(lr_decayed, self.lr_max)
+        self.x -= self.lr * self.grad
+    
+    def permute(self):
         if self.it % self.steps_per_permutation == 0:
+            # it enters here during 0-th step, so self.permutation is always
+            #   initialized
             self.permutation = np.random.permutation(self.loss.n)
             self.i = 0
             self.sampled_permutations += 1
@@ -35,22 +51,12 @@ class Shuffling(StochasticOptimizer):
             idx_perm %= self.loss.n
             normalization = self.batch_size
         else:
-            idx_perm = np.arange(self.i, min(self.loss.n, self.i+self.batch_size))
+            idx_perm = np.arange(self.i, min(self.loss.n, self.i + self.batch_size))
             normalization = self.loss.n / self.steps_per_permutation #works only for RR
         idx = self.permutation[idx_perm]
-        self.i += self.batch_size
-        self.i %= self.loss.n
-        # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
-        # any incomplete minibatch should be normalized by batch_size
-        self.grad = self.loss.stochastic_gradient(self.x, idx=idx, normalization=normalization)
-        
-        denom_const = 1 / self.lr0
-        lr_decayed = \
-            1 / (denom_const + self.lr_decay_coef * max(0, self.it - self.it_start_decay) ** self.lr_decay_power)
-        self.lr = min(lr_decayed, self.lr_max)
-        self.x -= self.lr * self.grad
-    
+        return idx, normalization
+
     def init_run(self, *args, **kwargs):
         super(Shuffling, self).init_run(*args, **kwargs)
         if self.lr0 is None:
-            self.lr0 = 1 / self.loss.batch_smoothness(batch_size)
+            raise Exception('lr0 is not specified!')
