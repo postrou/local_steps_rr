@@ -1,8 +1,5 @@
-import time
-
 import numpy as np
 
-from src.loss_functions import safe_sparse_norm
 from .shuffling import Shuffling
 from .clipped_shuffling import ClippedShuffling
 
@@ -59,6 +56,7 @@ class NastyaL0L1(Shuffling):
 
     def check_convergence(self):
         if self.f_tolerance is not None:
+            assert self.loss.f_opt is not None, 'loss does not have f_opt!'
             f_tolerance_met = \
                 self.loss.value(self.x) - self.loss.f_opt < self.f_tolerance
         else:
@@ -66,7 +64,7 @@ class NastyaL0L1(Shuffling):
         return super().check_convergence() or f_tolerance_met
 
 
-class NastyaL0L1Clip(NastyaL0L1, ClippedShuffling):
+class NastyaL0L1Clip(NastyaL0L1):
 
     def __init__(
         self,
@@ -75,21 +73,24 @@ class NastyaL0L1Clip(NastyaL0L1, ClippedShuffling):
         inner_step_size,
         steps_per_permutation=None,
         batch_size=1,
+        f_tolerance=None,
         *args,
         **kwargs
     ):
-        clip_level = c_0 / c_1
-        super().__init__(
-            clip_level=clip_level,
+        self.clip_level = c_0 / c_1
+        NastyaL0L1.__init__(
+            self,
+            c_0,
+            c_1,
+            inner_step_size,
             steps_per_permutation=steps_per_permutation,
             batch_size=batch_size,
-            lr0=0,
+            f_tolerance=f_tolerance,
             *args,
             **kwargs
         )
+
         self.lr = 1 / (2 * c_0)
-        self.inner_step_size = inner_step_size
-        self.outer_step_size = None
         self.g = None
 
     def step(self):
@@ -115,3 +116,7 @@ class NastyaL0L1Clip(NastyaL0L1, ClippedShuffling):
             self.g = np.zeros_like(self.x)
         
         self.i %= self.loss.n
+    
+    def clip(self, grad):
+        return min(1, self.clip_level / self.loss.norm(grad)) * grad
+
