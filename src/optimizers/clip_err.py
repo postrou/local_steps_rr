@@ -1,10 +1,9 @@
 import numpy as np
 
 from .shuffling import Shuffling
-from .clipped_shuffling import ClippedShuffling
 
 
-class NastyaL0L1(Shuffling):
+class ClipERR(Shuffling):
 
     def __init__(
         self,
@@ -94,7 +93,7 @@ class NastyaL0L1(Shuffling):
         return super().check_convergence() or f_tolerance_met
 
 
-class NastyaL0L1Clip(NastyaL0L1):
+class ClipERR2(ClipERR):
 
     def __init__(
         self,
@@ -108,7 +107,7 @@ class NastyaL0L1Clip(NastyaL0L1):
         **kwargs
     ):
         self.clip_level = c_0 / c_1
-        NastyaL0L1.__init__(
+        ClipERR.__init__(
             self,
             c_0,
             c_1,
@@ -156,5 +155,3 @@ class NastyaL0L1Clip(NastyaL0L1):
             outer_step_size = \
                 self.lr * min(1, self.clip_level / self.norm_grad_start_epoch)
         return outer_step_size
-
-
