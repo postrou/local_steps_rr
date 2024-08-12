@@ -11,13 +11,12 @@ from scipy.sparse import csc_matrix, csr_matrix
 from tqdm.auto import tqdm
 
 from datasets import get_dataset
-from first_order import Ig, Nesterov, ClippedIg
-from src.loss_functions import LogisticRegression, Quadratic
+from src.optimizers import Ig, Nesterov, ClippedIg
+from src.loss_functions import LogisticRegression, Quadratic, FourthOrder
 from src.optimizers import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
-        ClippedShufflingMean, ClippedShufflingSAGA
+        ClippedShufflingMean, ClippedShufflingSAGA, ClipERR, ClipERR2
 from src.utils import get_trace, relative_round
-        ClippedShufflingMean, ClippedShufflingSAGA, ClippedShuffling2_1
 
 
 def best_trace_by_step_size(traces, step_size_list):
@@ -37,6 +36,38 @@ def best_trace_by_step_size(traces, step_size_list):
     best_trace.step_size = step_size_list[min_i]
     return best_trace
 
+
+def load_quadratic_dataset(is_noised):
+    np.random.seed(0)
+    if not is_noised:
+        x = np.append(np.random.randint(0, 501, 500), 
+                        np.random.randint(1e5 - 500, 1e5 + 1, 500))
+    else:
+        n_left_functions = 300
+        var = 3
+        x = np.append(
+            np.random.randint(0, 501, n_left_functions) + np.random.normal(0, var, size=n_left_functions), 
+            np.random.randint(1e5 - 500, 1e5 + 1, 1000 - n_left_functions) + \
+                np.random.normal(0, var, size=1000 - n_left_functions))
+
+    loss = Quadratic(x)
+    return loss
+
+
+def load_logreg_dataset():
+    A, b = get_dataset(dataset)
+    loss = LogisticRegression(A, b, l1=0, l2=0)
+    L = loss.smoothness()
+    l2 = L / np.sqrt(n)
+    loss.l2 = l2
+    return loss
+
+
+def load_fourth_order_dataset():
+   np.random.seed(0)
+   x = np.random.uniform(-10, 10, 1000)
+   loss = FourthOrder(x) 
+   return loss
 
 def so(
     loss,
@@ -136,7 +167,7 @@ def ig(
         ig_trace = best_trace_by_step_size(ig_traces, step_size_list)
     print(f'best step size: {ig_trace.step_size}')
     ig_trace.save(f'ig_{n_epochs}', trace_path)
- 
+
 
 def rr(
     loss,
@@ -178,35 +209,32 @@ def crr(
     stoch_it, 
     n_seeds, 
     trace_len, 
-    trace_path, 
+    trace_dir, 
     batch_size, 
-    step_size_list,
+    step_size,
     clip_level
 ):
-    crr_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_{n_epochs}'), loss)
+    trace_name = f'c_{clip_level}_lr_{step_size}_rr_{n_epochs}'
+    crr_trace = get_trace(os.path.join(trace_dir, trace_name), loss)
     if not crr_trace:
-        cl_crr_traces = []
-        for step_size in step_size_list:
-            lr0 = step_size
-            crr = ClippedShuffling(
-                loss=loss, 
-                lr0=lr0,
-                it_max=stoch_it, 
-                n_seeds=n_seeds, 
-                batch_size=batch_size, 
-                trace_len=trace_len,
-                clip_level=clip_level,
-                steps_per_permutation=np.inf
-            )
-            crr_trace = crr.run(x0=x0)
-            crr_trace.convert_its_to_epochs(batch_size=batch_size)
-            crr_trace.compute_loss_of_iterates()
-            crr_trace.compute_last_iterate_grad_norms()
-            cl_crr_traces.append(crr_trace)
+        crr = ClippedShuffling(
+            loss=loss, 
+            lr0=step_size,
+            it_max=stoch_it, 
+            n_seeds=n_seeds, 
+            batch_size=batch_size, 
+            trace_len=trace_len,
+            clip_level=clip_level,
+            steps_per_permutation=np.inf
+        )
+        crr_trace = crr.run(x0=x0)
+        crr_trace.convert_its_to_epochs(batch_size=batch_size)
+        crr_trace.compute_loss_of_iterates()
+        crr_trace.compute_last_iterate_grad_norms()
 
-        crr_trace = best_trace_by_step_size(cl_crr_traces, step_size_list)
-        print(f'Best step size for clip level {clip_level}: {crr_trace.step_size}')
-        crr_trace.save(f'c_{clip_level}_rr_{n_epochs}', trace_path)
+        crr_trace.save(trace_name, trace_dir)
+    else:
+        print(f'CRR trace with cl={clip_level}, lr={step_size} exists!')
 
 
 def crr_opt(
@@ -565,7 +593,7 @@ def cig(
         cig_trace = best_trace_by_step_size(cl_cig_traces, step_size_list)
         print(f'best step size: {cig_trace.step_size}')
         cig_trace.save(f'c_{clip_level}_ig_{n_epochs}', trace_path)
- 
+
 
 def cig_opt(
     loss,
@@ -604,20 +632,92 @@ def cig_opt(
         cig_opt_trace.save(f'c_{clip_level}_ig_opt_{n_epochs}', trace_path)
 
 
+def clerr(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    use_first_type,
+    use_g,
+    clip_level,
+    step_size,
+    inner_step_size
+):
+    if use_g:
+        if use_first_type:
+            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_g_{n_epochs}'
+        else:
+            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_2_g_{n_epochs}'
+    else:
+        if use_first_type:
+            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_{n_epochs}'
+        else:
+            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_2_{n_epochs}'
+    clerr_trace = get_trace(
+        os.path.join(trace_path, trace_name), 
+        loss
+    )
+    if not clerr_trace:
+        c_0 = 1 / (2 * step_size)
+        c_1 = c_0 / clip_level
+        ClerrClass = ClipERR if use_first_type else ClipERR2
+        clerr = ClerrClass(
+            c_0=c_0,
+            c_1=c_1,
+            inner_step_size=inner_step_size,
+            loss=loss, 
+            it_max=stoch_it, 
+            batch_size=batch_size, 
+            trace_len=trace_len,
+            n_seeds=n_seeds, 
+            f_tolerance=None,
+            use_g_in_outer_step=use_g
+        )
+        try:
+            clerr_trace = clerr.run(x0=x0)
+        except AssertionError:
+            print(f'Some error, skipping cl={clip_level}, lr={step_size}, \
+                inner_lr={inner_step_size}')
+            return
+        clerr_trace.convert_its_to_epochs(batch_size=batch_size)
+        clerr_trace.compute_loss_of_iterates()
+        clerr_trace.save(
+            trace_name,
+            trace_path
+        )
+    else:
+        print(f'CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} exists!')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('dataset', type=str)
     parser.add_argument('alg', type=str)
     parser.add_argument('--n_epochs', type=int, default=250)
+    parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--x_opt', action='store_true')
     parser.add_argument('--cl_min', type=int, default=None, help='min clip level in log scale')
     parser.add_argument('--cl_max', type=int, default=None, help='max clip level in log scale')
-    parser.add_argument('--a_min', type=int, default=None, help='min alpha in log scale')
-    parser.add_argument('--a_max', type=int, default=None, help='max alpha in log scale')
+    parser.add_argument('--lr_min', type=int, default=None, help='min step size in log scale')
+    parser.add_argument('--lr_max', type=int, default=None, help='max step size in log scale')
+    parser.add_argument('--in_lr_min', type=int, default=None, help='min inner step size in log scale (for CLERR)')
+    parser.add_argument('--in_lr_max', type=int, default=None, help='max inner step size in log scale (for CLERR)')
+    parser.add_argument('--a_min', type=int, default=None, help='min alpha in log scale (for shifts)')
+    parser.add_argument('--a_max', type=int, default=None, help='max alpha in log scale (for shifts)')
+    parser.add_argument('--use_g', action='store_true')
+    parser.add_argument('--n_cpus', type=int, default=10, help='number of processes to run in parallel')
     args = parser.parse_args()
 
+    step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+    clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
+
     # args = parser.parse_args([
-    #     'quadratic_noised', 
+    #     'quadratic_noised',
     #     'crr_shift',
     #     '--n_epochs', '10000',
     #     '--x_opt',
@@ -631,31 +731,17 @@ if __name__ == '__main__':
     print('Loading data')
     dataset = args.dataset
     if dataset.startswith('quadratic'):
-        np.random.seed(0)
-        if dataset == 'quadratic':
-            x = np.append(np.random.randint(0, 501, 500), 
-                          np.random.randint(1e5 - 500, 1e5 + 1, 500))
-        elif dataset == 'quadratic_noised':
-            n_left_functions = 300
-            var = 3
-            x = np.append(
-                np.random.randint(0, 501, n_left_functions) + np.random.normal(0, var, size=n_left_functions), 
-                np.random.randint(1e5 - 500, 1e5 + 1, 1000 - n_left_functions) + \
-                    np.random.normal(0, var, size=1000 - n_left_functions))
-        else:
-            raise NotImplementedError(f'Dataset {dataset} is not implemented!')
-
-        loss = Quadratic(x)
-        f_opt = loss.f_opt
-        x_opt = loss.x_opt
-        n, dim = len(x), 1
+        is_noised = dataset == 'quadratic_noised'
+        loss = load_quadratic_dataset(is_noised)
+        f_opt, x_opt = loss.f_opt, loss.x_opt
+        n, dim = len(loss.x), 1
         L = loss.smoothness()
         if args.x_opt:
             x0 = np.array([x_opt])
         else:
             x0 = np.array([3 * 1e4])        
         n_epochs = args.n_epochs
-        batch_size = 32
+        batch_size = args.batch_size
         # batch_size = 1
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
@@ -671,17 +757,14 @@ if __name__ == '__main__':
         if not os.path.exists(trace_path):
             os.makedirs(trace_path)
 
-        step_size_list = np.logspace(-5, -1, 5)
+        # step_size_list = np.logspace(-5, -1, 5)
 
-    else:
-        A, b = get_dataset(dataset)
-        loss = LogisticRegression(A, b, l1=0, l2=0)
-        n, dim = A.shape
-        L = loss.smoothness()
-        l2 = L / np.sqrt(n)
-        loss.l2 = l2
+    elif dataset == 'logreg':
+        loss = load_logreg_dataset()
+        n, dim = loss.A.shape
+        l2 = loss.l2
         n_epochs = args.n_epochs
-        batch_size = 512
+        batch_size = args.batch_size
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
@@ -712,12 +795,35 @@ if __name__ == '__main__':
         f_opt = np.min(nest_str_trace.loss_vals)
         x_opt = nest_str_trace.xs[-1]
 
-    print(trace_path)
-    print(plot_path)
+    elif dataset == 'fourth_order':
+        loss = load_fourth_order_dataset()
+        x, f_opt, x_opt = loss.x, loss.f_opt, loss.x_opt
+        n, dim = len(x), 1
+        x0 = np.array([1000.0])
+        n_epochs = args.n_epochs
+        batch_size = args.batch_size
+        n_seeds = 10
+        stoch_it = n_epochs * n // batch_size
+        trace_len = 300
+
+        if x0 == x_opt:
+            trace_path = f'results/{dataset}/x0_x_opt/bs_{batch_size}/'
+            plot_path = f'plots/{dataset}/x0_x_opt/bs_{batch_size}'
+        else:
+            trace_path = f'results/{dataset}/x0_{x0[0]}/bs_{batch_size}/'
+            plot_path = f'plots/{dataset}/x0_{x0[0]}/bs_{batch_size}'
+        if not os.path.exists(trace_path):
+            os.makedirs(trace_path)
+        if not os.path.exists(plot_path):
+            os.makedirs(plot_path)
+
+    print('trace path:', trace_path) 
 
     alg = args.alg
 
     if alg == 'rr':
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Random Reshuffling')
         rr(
             loss,
@@ -735,8 +841,10 @@ if __name__ == '__main__':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         print('Clipped Random Reshuffling')
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-        pool = Pool(min(len(clip_level_list), 50))
+        print('step sizes:', step_size_list)
+        print('clip levels:', clip_level_list)
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
+        args_product = product(step_size_list, clip_level_list)
         partial_crr = partial(
             crr,
             loss,
@@ -746,16 +854,16 @@ if __name__ == '__main__':
             n_seeds, 
             trace_len, 
             trace_path, 
-            batch_size, 
-            step_size_list,
+            batch_size
         )
-        pool.map(partial_crr, clip_level_list)
-        
+        pool.starmap(partial_crr, args_product)
+
     elif alg == 'crr_opt':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-        pool = Pool(min(len(clip_level_list), 50))
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_opt = partial(
             crr_opt,
             loss,
@@ -776,11 +884,12 @@ if __name__ == '__main__':
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.a_min is not None and args.a_max is not None, \
             f'You did not provide --a_min or --a_max for algorithm {alg}'
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
         alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
         print('Clipping with shifts')
-        pool = Pool(min(len(alpha_cl_list), 50))
+        pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift,
             loss,
@@ -799,10 +908,11 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_2':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Clipping with shifts, version 2')
-        # pool = Pool(min(len(alpha_cl_list), 50))
-        pool = Pool(min(len(clip_level_list), 50))
+        # pool = Pool(min(len(alpha_cl_list), args.n_cpus))
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_2,
             loss,
@@ -822,10 +932,12 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_2_1':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         print('Clipping with shifts, version 2.1')
-        # pool = Pool(min(len(alpha_cl_list), 50))
-        pool = Pool(min(len(clip_level_list), 50))
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_2_1,
             loss,
@@ -845,9 +957,10 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_3':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Clipping with shifts, version 3')
-        pool = Pool(min(len(clip_level_list), 50))
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_3,
             loss,
@@ -867,9 +980,8 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_optf':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         print('Clipping with shifts with full gradient in the optimum')
-        pool = Pool(min(len(clip_level_list), 50))
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_optf,
             loss,
@@ -891,11 +1003,14 @@ if __name__ == '__main__':
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.a_min is not None and args.a_max is not None, \
             f'You did not provide --a_min or --a_max for algorithm {alg}'
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
         alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
         print('Clipping with shifts-mean')
-        pool = Pool(min(len(alpha_cl_list), 50))
+        pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_mean,
             loss,
@@ -916,11 +1031,10 @@ if __name__ == '__main__':
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.a_min is not None and args.a_max is not None, \
             f'You did not provide --a_min or --a_max for algorithm {alg}'
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
         alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
         print('Clipping with shifts-SAGA')
-        pool = Pool(min(len(alpha_cl_list), 50))
+        pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_saga,
             loss,
@@ -937,6 +1051,8 @@ if __name__ == '__main__':
         pool.starmap(partial_crr_shift, alpha_cl_list)
 
     elif alg == 'so':
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Single Reshuffling')
         so(
             loss,
@@ -951,6 +1067,9 @@ if __name__ == '__main__':
         )
 
     elif alg == 'sgd':
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         print('Regular SGD')
         sgd(
             loss,
@@ -965,6 +1084,8 @@ if __name__ == '__main__':
         )
 
     elif alg == 'ig':
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Deterministic Reshuffling')
         ig(
             loss,
@@ -981,9 +1102,10 @@ if __name__ == '__main__':
     elif alg == 'cig':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Clipped Determenistic Reshuffling')
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-        pool = Pool(min(len(clip_level_list), 50))
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_cig = partial(
             cig,
             loss,
@@ -1001,9 +1123,10 @@ if __name__ == '__main__':
     elif alg == 'cig_opt':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is None and args.lr_max is None, \
+            f'Algorithm {alg} is not implemented for lrs in argparse!'
         print('Clipped Determenistic Reshuffling')
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-        pool = Pool(min(len(clip_level_list), 50))
+        pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_cig_opt = partial(
             cig_opt,
             loss,
@@ -1018,6 +1141,42 @@ if __name__ == '__main__':
             step_size_list,
         )
         pool.map(partial_cig_opt, clip_level_list)
+
+    elif alg == 'clerr' or alg == 'clerr_2':
+        assert args.cl_min is not None and args.cl_max is not None, \
+            f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        if alg == 'clerr':
+            print('CLERR with g' if args.use_g else 'CLERR')
+        else:
+            print("CLERR-2 with g" if args.use_g else "CLERR-2")
+
+        in_step_size_list = np.logspace(args.in_lr_min, args.in_lr_max, args.in_lr_max - args.in_lr_min + 1)
+        args_product = list(product(clip_level_list, step_size_list, in_step_size_list))
+        pool = Pool(min(len(args_product), args.n_cpus))
+        print('step sizes:', step_size_list)
+        print('clip levels:', clip_level_list)
+        print('inner clip levels:', in_step_size_list)
+
+        use_first_type = alg == 'clerr'
+        partial_clerr = partial(
+            clerr,
+            loss,
+            x0,
+            n_epochs,
+            stoch_it,
+            n_seeds,
+            trace_len,
+            trace_path,
+            batch_size,
+            use_first_type,
+            args.use_g,
+        )
+        pool.starmap(partial_clerr, args_product)
 
     else:
         raise NotImplementedError(f'Unknown algorithm: {alg}')
