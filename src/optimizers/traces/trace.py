@@ -14,6 +14,7 @@ class Trace:
     and plots the trajectory.
     """
     def __init__(self, loss):
+        self.update_counter = 0
         self.loss = loss
         self.xs = []
         self.ts = [] # time
