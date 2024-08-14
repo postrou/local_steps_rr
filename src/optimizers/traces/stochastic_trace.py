@@ -23,6 +23,7 @@ class StochasticTrace:
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
         self.step_size = None
+        self.clip_level = None
         self.grad_estimators_all = {}
         self.shift_grad_opt_diffs_all = {}
         
