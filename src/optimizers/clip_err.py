@@ -4,6 +4,8 @@ from .shuffling import Shuffling
 
 
 class ClipERR(Shuffling):
+    """ClipERR, where we don't use explicit clipping, but compute outer step size
+    """
 
     def __init__(
         self,
@@ -24,63 +26,75 @@ class ClipERR(Shuffling):
             *args,
             **kwargs
         )
-        self.c_1 = c_0
-        self.c_2 = c_1
+        self.c_0 = c_0
+        self.c_1 = c_1
         self.inner_step_size = inner_step_size
         self.f_tolerance = f_tolerance
         self.use_g_in_outer_step = use_g_in_outer_step
-        self.g = None
+        self.grad_estimator = None
     
     def step(self):
-        if self.g is None:
-            self.g = np.zeros_like(self.x)
+        if self.grad_estimator is None:
+            self.grad_estimator = np.zeros_like(self.x)
             if not self.use_g_in_outer_step:
-                grad_start_epoch = self.loss.stochastic_gradient(
-                    self.x,
-                    idx=range(self.loss.n)
-                )
-                self.norm_grad_start_epoch = self.loss.norm(grad_start_epoch)
+                self.update_norm_grad_start_epoch()
 
-        idx, normalization = self.permute()
-        self.i += self.batch_size
-        self.grad = self.loss.stochastic_gradient(
+        idx, _ = self.permute()
+        self.stoch_grad = self.loss.stochastic_gradient(
             self.x, 
             idx=idx, 
-            normalization=normalization
+            normalization=None
         )
+        self.grad_estimator += self.stoch_grad * (len(idx) / self.loss.n)
 
-        if self.i < self.loss.n:
-            self.perform_inner_step()
-        else:
+        self.perform_inner_step()
+        self.i += self.batch_size
+        if self.i >= self.loss.n:
             self.perform_outer_step()
+            self.i = 0
         
-        self.i %= self.loss.n
+
+    def permute(self):
+        if self.it == 0:
+            # it enters here during 0-th step, so self.permutation is always
+            #   initialized
+            self.permutation = np.random.permutation(self.loss.n)
+            self.i = 0
+            self.sampled_permutations += 1
+
+        idx_perm = np.arange(self.i, min(self.loss.n, self.i + self.batch_size))
+        idx = self.permutation[idx_perm]
+        return idx, None
+
+
+    def update_norm_grad_start_epoch(self):
+        grad_start_epoch = self.loss.gradient(self.x)
+        self.norm_grad_start_epoch = self.loss.norm(grad_start_epoch)
 
     def perform_inner_step(self):
-        self.x -= self.inner_step_size * self.grad
-        self.g += self.grad
+        self.x -= self.inner_step_size * self.stoch_grad
 
     def perform_outer_step(self):
-        self.g *= self.batch_size / self.loss.n
-
         outer_step_size = self.calculate_outer_step_size()
 
-        self.x -= outer_step_size * self.g
+        print(self.it, outer_step_size, self.x, self.grad_estimator)
+        self.x -= outer_step_size * self.grad_estimator
         if not self.use_g_in_outer_step:
-            grad_start_epoch = self.loss.stochastic_gradient(
-                self.x,
-                idx=range(self.loss.n)
-            )
-            self.norm_grad_start_epoch = self.loss.norm(grad_start_epoch)
-        self.g = np.zeros_like(self.x)
+            self.update_norm_grad_start_epoch()
+        self.grad_estimator = np.zeros_like(self.x)
 
     def calculate_outer_step_size(self):
+        """Calculating outer step size
+
+        Returns:
+            outer_step_size: outer step size, calculated from c_0 and c_1
+        """
         if self.use_g_in_outer_step:
             outer_step_size = \
-                1 / (self.c_1 + self.c_2 * self.loss.norm(self.g))
+                1 / (self.c_0 + self.c_1 * self.loss.norm(self.grad_estimator))
         else:
             outer_step_size = \
-                1 / (self.c_1 + self.c_2 * self.norm_grad_start_epoch)
+                1 / (self.c_0 + self.c_1 * self.norm_grad_start_epoch)
         return outer_step_size
 
     def check_convergence(self):
@@ -94,7 +108,11 @@ class ClipERR(Shuffling):
 
 
 class ClipERR2(ClipERR):
-
+    """
+        ClipERR with explicit clipping.
+        We get step_size and clip_level from c_0 and c_1 and use outer step size
+        as clipping.
+    """
     def __init__(
         self,
         c_0,
@@ -107,7 +125,7 @@ class ClipERR2(ClipERR):
         **kwargs
     ):
         self.clip_level = c_0 / c_1
-        ClipERR.__init__(
+        super().__init__(
             self,
             c_0,
             c_1,
@@ -120,38 +138,28 @@ class ClipERR2(ClipERR):
         )
 
         self.lr = 1 / (2 * c_0)
-        self.g = None
+        self.grad_estimator = None
+   
+    def perform_outer_step(self):
+        outer_step_size = self.calculate_outer_step_size()
 
-    def step(self):
-        if self.g is None:
-            self.g = np.zeros_like(self.x)
-            if not self.use_g_in_outer_step:
-                grad_start_epoch = self.loss.stochastic_gradient(
-                    self.x,
-                    idx=range(self.loss.n)
-                )
-                self.norm_grad_start_epoch = self.loss.norm(grad_start_epoch)
+        self.x -= self.lr * outer_step_size * self.grad_estimator
+        if not self.use_g_in_outer_step:
+            self.update_norm_grad_start_epoch()
+        self.grad_estimator = np.zeros_like(self.x)
 
-        idx, normalization = self.permute()
-        self.i += self.batch_size
-        self.grad = self.loss.stochastic_gradient(
-            self.x, 
-            idx=idx, 
-            normalization=normalization
-        )
-
-        if self.i < self.loss.n:
-            self.perform_inner_step()
-        else:
-            self.perform_outer_step()
-        
-        self.i %= self.loss.n
-    
     def calculate_outer_step_size(self):
+        """Calculating outer step size.
+        Here outer_step_size behaves like clipping.
+
+        Returns:
+            outer_step_size: outer step size, computed from gradient norm and 
+            clip_level
+        """
         if self.use_g_in_outer_step:
             outer_step_size = \
-                self.lr * min(1, self.clip_level / self.loss.norm(self.g))
+                min(1, self.clip_level / self.loss.norm(self.grad_estimator))
         else:
             outer_step_size = \
-                self.lr * min(1, self.clip_level / self.norm_grad_start_epoch)
+                min(1, self.clip_level / self.norm_grad_start_epoch)
         return outer_step_size
