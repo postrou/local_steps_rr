@@ -81,21 +81,7 @@ class ClippedShuffling(Shuffling):
             self.trace.shift_grad_opt_diffs.append(shift_grad_opt_diff)
 
     def step(self):
-        if self.it % self.steps_per_permutation == 0:
-            # for shuffle once it enters here only on the 0-th iteration
-            self.permutation = np.random.permutation(self.loss.n)
-            self.i = 0
-            self.sampled_permutations += 1
-        if self.steps_per_permutation is np.inf:
-            idx_perm = np.arange(self.i, self.i + self.batch_size)
-            idx_perm %= self.loss.n
-            normalization = self.batch_size
-        else:
-            idx_perm = np.arange(self.i, min(self.loss.n, self.i + self.batch_size))
-            normalization = (
-                self.loss.n / self.steps_per_permutation
-            )  # works only for RR
-        idx = self.permutation[idx_perm]
+        idx, normalization = self.permute()
         self.i += self.batch_size
         self.i %= self.loss.n
         # since the objective is 1/n sum_{i=1}^n f_i(x) + l2/2*||x||^2
@@ -104,28 +90,10 @@ class ClippedShuffling(Shuffling):
             self.x, idx=idx, normalization=normalization
         )
 
-        denom_const = 1 / self.lr0
-        lr_decayed = 1 / (
-            denom_const
-            + self.lr_decay_coef
-            * max(0, self.it - self.it_start_decay) ** self.lr_decay_power
-        )
-        self.lr = min(lr_decayed, self.lr_max)
+        self.lr = self.compute_lr()
 
         if self.alpha_shift > 0:
-            id_shift = self.it % len(self.shifts)
-            shift = self.shifts[id_shift]
-            if not np.isscalar(self.grad):
-                shift = shift.reshape(-1, 1)
-            if scipy.sparse.issparse(self.grad):
-                shift = scipy.sparse.csr_matrix(shift)
-
-            hat_delta = self.clip(self.grad - shift)
-            self.grad_estimator = shift + hat_delta
-            shift_next_epoch = np.transpose(shift + self.alpha_shift * hat_delta)
-            if scipy.sparse.issparse(shift_next_epoch):
-                shift_next_epoch = shift_next_epoch.toarray()
-            self.shifts[id_shift] = shift_next_epoch
+            self.perform_shift()
         elif self.x_opt is None:
             self.grad_estimator = self.clip(self.grad)
         else:
@@ -142,6 +110,21 @@ class ClippedShuffling(Shuffling):
                 self.grad_estimator = grad_opt + self.clip(self.grad - grad_opt)
 
         self.x -= self.lr * self.grad_estimator
+
+    def perform_shift(self):
+        id_shift = self.it % len(self.shifts)
+        shift = self.shifts[id_shift]
+        if not np.isscalar(self.grad):
+            shift = shift.reshape(-1, 1)
+        if scipy.sparse.issparse(self.grad):
+            shift = scipy.sparse.csr_matrix(shift)
+
+        hat_delta = self.clip(self.grad - shift)
+        self.grad_estimator = shift + hat_delta
+        shift_next_epoch = np.transpose(shift + self.alpha_shift * hat_delta)
+        if scipy.sparse.issparse(shift_next_epoch):
+            shift_next_epoch = shift_next_epoch.toarray()
+        self.shifts[id_shift] = shift_next_epoch
 
     def clip(self, grad):
         return min(1, self.clip_level / self.loss.norm(grad)) * grad
