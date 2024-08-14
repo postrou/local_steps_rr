@@ -680,8 +680,10 @@ def clerr(
         try:
             clerr_trace = clerr.run(x0=x0)
         except AssertionError:
-            print(f'Some error, skipping cl={clip_level}, lr={step_size}, \
-                inner_lr={inner_step_size}')
+            if use_first_type:
+                print(f'CLERR, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
+            else:
+                print(f'CLERR-2, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
             return
         clerr_trace.convert_its_to_epochs(batch_size=batch_size)
         clerr_trace.compute_loss_of_iterates()
@@ -711,21 +713,6 @@ if __name__ == '__main__':
     parser.add_argument('--use_g', action='store_true')
     parser.add_argument('--n_cpus', type=int, default=10, help='number of processes to run in parallel')
     args = parser.parse_args()
-
-    step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
-    clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-
-
-    # args = parser.parse_args([
-    #     'quadratic_noised',
-    #     'crr_shift',
-    #     '--n_epochs', '10000',
-    #     '--x_opt',
-    #     '--cl_min', '-3',
-    #     '--cl_max', '6',
-    #     '--a_min', '-4',
-    #     '--a_max', '2'
-    #     ])
 
     # Get data and set all parameters
     print('Loading data')
@@ -804,7 +791,7 @@ if __name__ == '__main__':
         batch_size = args.batch_size
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
-        trace_len = 300
+        trace_len = 500
 
         if x0 == x_opt:
             trace_path = f'results/{dataset}/x0_x_opt/bs_{batch_size}/'
@@ -822,8 +809,11 @@ if __name__ == '__main__':
     alg = args.alg
 
     if alg == 'rr':
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+            
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+
         print('Random Reshuffling')
         rr(
             loss,
@@ -840,6 +830,12 @@ if __name__ == '__main__':
     elif alg == 'crr':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipped Random Reshuffling')
         print('step sizes:', step_size_list)
         print('clip levels:', clip_level_list)
@@ -862,7 +858,11 @@ if __name__ == '__main__':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+            
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_opt = partial(
             crr_opt,
@@ -884,11 +884,15 @@ if __name__ == '__main__':
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.a_min is not None and args.a_max is not None, \
             f'You did not provide --a_min or --a_max for algorithm {alg}'
+
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
         alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
+
         print('Clipping with shifts')
+        print('step sizes:', step_size_list)
+        print('clip levels:', clip_level_list)
         pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift,
@@ -908,10 +912,13 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_2':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipping with shifts, version 2')
-        # pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_2,
@@ -932,10 +939,12 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_2_1':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipping with shifts, version 2.1')
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
@@ -958,7 +967,11 @@ if __name__ == '__main__':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipping with shifts, version 3')
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
@@ -980,6 +993,12 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_optf':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is None and args.lr_max is None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipping with shifts with full gradient in the optimum')
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
@@ -1003,12 +1022,14 @@ if __name__ == '__main__':
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.a_min is not None and args.a_max is not None, \
             f'You did not provide --a_min or --a_max for algorithm {alg}'
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
         clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
         alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
+
         print('Clipping with shifts-mean')
         pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         partial_crr_shift = partial(
@@ -1029,10 +1050,16 @@ if __name__ == '__main__':
     elif alg == 'crr_shift_saga':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        assert args.lr_min is not None and args.lrr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
         assert args.a_min is not None and args.a_max is not None, \
             f'You did not provide --a_min or --a_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         alpha_shift_list = np.logspace(args.a_min, args.a_max, args.a_max - args.a_min + 1)
         alpha_cl_list = list(product(alpha_shift_list, clip_level_list))
+
         print('Clipping with shifts-SAGA')
         pool = Pool(min(len(alpha_cl_list), args.n_cpus))
         partial_crr_shift = partial(
@@ -1051,8 +1078,11 @@ if __name__ == '__main__':
         pool.starmap(partial_crr_shift, alpha_cl_list)
 
     elif alg == 'so':
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lrr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+
         print('Single Reshuffling')
         so(
             loss,
@@ -1067,9 +1097,11 @@ if __name__ == '__main__':
         )
 
     elif alg == 'sgd':
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lrr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        
         print('Regular SGD')
         sgd(
             loss,
@@ -1084,8 +1116,11 @@ if __name__ == '__main__':
         )
 
     elif alg == 'ig':
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lrr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+ 
         print('Deterministic Reshuffling')
         ig(
             loss,
@@ -1102,8 +1137,12 @@ if __name__ == '__main__':
     elif alg == 'cig':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lrr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipped Determenistic Reshuffling')
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_cig = partial(
@@ -1123,8 +1162,12 @@ if __name__ == '__main__':
     elif alg == 'cig_opt':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is None and args.lr_max is None, \
-            f'Algorithm {alg} is not implemented for lrs in argparse!'
+        assert args.lr_min is not None and args.lrr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+
         print('Clipped Determenistic Reshuffling')
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_cig_opt = partial(
@@ -1155,12 +1198,15 @@ if __name__ == '__main__':
         else:
             print("CLERR-2 with g" if args.use_g else "CLERR-2")
 
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
         in_step_size_list = np.logspace(args.in_lr_min, args.in_lr_max, args.in_lr_max - args.in_lr_min + 1)
+
         args_product = list(product(clip_level_list, step_size_list, in_step_size_list))
         pool = Pool(min(len(args_product), args.n_cpus))
         print('step sizes:', step_size_list)
         print('clip levels:', clip_level_list)
-        print('inner clip levels:', in_step_size_list)
+        print('inner step sizes:', in_step_size_list)
 
         use_first_type = alg == 'clerr'
         partial_clerr = partial(
