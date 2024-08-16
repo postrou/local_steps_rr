@@ -154,7 +154,7 @@ class ClERR2(ClERR):
             print('ClERR-2 outer step size:', self.lr * self.outer_step_size)
             print('ClERR outer step size:', 1 / (self.c_0 + self.c_1 * self.norm_grad_start_epoch), end='\n\n')
         
-        self.x -= 2 * self.lr * self.outer_step_size * self.grad_estimator
+        self.x -= self.lr * self.outer_step_size * self.grad_estimator
         if not self.use_g_in_outer_step:
             self.update_norm_grad_start_epoch()
         self.grad_estimator = np.zeros_like(self.x)
