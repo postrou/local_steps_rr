@@ -10,9 +10,9 @@ import numpy.linalg as la
 from scipy.sparse import csc_matrix, csr_matrix
 from tqdm.auto import tqdm
 
-from datasets import get_dataset
 from src.optimizers import Ig, Nesterov, ClippedIg
-from src.loss_functions import LogisticRegression, Quadratic, FourthOrder
+from src.loss_functions import load_quadratic_dataset, load_logreg_dataset, \
+    load_fourth_order_dataset
 from src.optimizers import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
         ClippedShufflingMean, ClippedShufflingSAGA, ClERR, ClERR2
@@ -36,38 +36,6 @@ def best_trace_by_step_size(traces, step_size_list):
     best_trace.step_size = step_size_list[min_i]
     return best_trace
 
-
-def load_quadratic_dataset(is_noised):
-    np.random.seed(0)
-    if not is_noised:
-        x = np.append(np.random.randint(0, 501, 500), 
-                        np.random.randint(1e5 - 500, 1e5 + 1, 500))
-    else:
-        n_left_functions = 300
-        var = 3
-        x = np.append(
-            np.random.randint(0, 501, n_left_functions) + np.random.normal(0, var, size=n_left_functions), 
-            np.random.randint(1e5 - 500, 1e5 + 1, 1000 - n_left_functions) + \
-                np.random.normal(0, var, size=1000 - n_left_functions))
-
-    loss = Quadratic(x)
-    return loss
-
-
-def load_logreg_dataset():
-    A, b = get_dataset(dataset)
-    loss = LogisticRegression(A, b, l1=0, l2=0)
-    L = loss.smoothness()
-    l2 = L / np.sqrt(n)
-    loss.l2 = l2
-    return loss
-
-
-def load_fourth_order_dataset():
-   np.random.seed(0)
-   x = np.random.uniform(-10, 10, 1000)
-   loss = FourthOrder(x) 
-   return loss
 
 def so(
     loss,

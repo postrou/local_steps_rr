@@ -51,3 +51,22 @@ class Quadratic(Oracle):
     
     def smoothness(self):
         return 2 * self.n
+
+
+def load_quadratic_dataset(is_noised):
+    np.random.seed(0)
+    if not is_noised:
+        x = np.append(np.random.randint(0, 501, 500), 
+                        np.random.randint(1e5 - 500, 1e5 + 1, 500))
+    else:
+        n_left_functions = 300
+        var = 3
+        x = np.append(
+            np.random.randint(0, 501, n_left_functions) + np.random.normal(0, var, size=n_left_functions), 
+            np.random.randint(1e5 - 500, 1e5 + 1, 1000 - n_left_functions) + \
+                np.random.normal(0, var, size=1000 - n_left_functions))
+
+    loss = Quadratic(x)
+    return loss
+
+

@@ -51,3 +51,11 @@ class FourthOrder(Oracle):
     
     def smoothness(self):
         raise Exception('This function is not smooth!')
+
+
+def load_fourth_order_dataset():
+   np.random.seed(0)
+   x = np.random.uniform(-10, 10, 1000)
+   loss = FourthOrder(x) 
+   return loss
+

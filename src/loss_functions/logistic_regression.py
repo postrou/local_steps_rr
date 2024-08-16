@@ -4,6 +4,7 @@ import numpy as np
 import numpy.linalg as la
 from sklearn.utils.extmath import row_norms, safe_sparse_dot
 
+from datasets import get_dataset
 from .loss_oracle import Oracle
 from .utils import safe_sparse_add, safe_sparse_multiply, safe_sparse_norm
 
@@ -156,3 +157,12 @@ class LogisticRegression(Oracle):
         else:
             dty = 0 if x is None else float((x!=0).sum()) / x.size
         return dty
+
+
+def load_logreg_dataset(dataset):
+    A, b = get_dataset(dataset)
+    loss = LogisticRegression(A, b, l1=0, l2=0)
+    L = loss.smoothness()
+    l2 = L / np.sqrt(n)
+    loss.l2 = l2
+    return loss
