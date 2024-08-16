@@ -15,7 +15,7 @@ from src.optimizers import Ig, Nesterov, ClippedIg
 from src.loss_functions import LogisticRegression, Quadratic, FourthOrder
 from src.optimizers import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
-        ClippedShufflingMean, ClippedShufflingSAGA, ClipERR, ClipERR2
+        ClippedShufflingMean, ClippedShufflingSAGA, ClERR, ClERR2
 from src.utils import get_trace, relative_round
 
 
@@ -664,7 +664,7 @@ def clerr(
     if not clerr_trace:
         c_0 = 1 / (2 * step_size)
         c_1 = c_0 / clip_level
-        ClerrClass = ClipERR if use_first_type else ClipERR2
+        ClerrClass = ClERR if use_first_type else ClERR2
         clerr = ClerrClass(
             c_0=c_0,
             c_1=c_1,
@@ -691,8 +691,15 @@ def clerr(
             trace_name,
             trace_path
         )
+        if use_first_type:
+            print(f'🥰🥰🥰 Finished CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
+        else:
+            print(f'🥰🥰🥰 Finished CLERR-2 trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
     else:
-        print(f'CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} exists!')
+        if use_first_type:
+            print(f'🤙🤙🤙 CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
+        else:
+            print(f'🤙🤙🤙 CLERR-2 trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
 
 
 if __name__ == '__main__':
@@ -733,7 +740,7 @@ if __name__ == '__main__':
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
-        trace_len = 300
+        trace_len = 500
 
         if x0 == x_opt:
             trace_path = f'results/{dataset}/x0_x_opt/bs_{batch_size}/'
@@ -755,7 +762,7 @@ if __name__ == '__main__':
         # n_seeds = 2 # was set to 20 in the paper
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
-        trace_len = 300
+        trace_len = 500
         if dataset == 'w8a':
             # clip_level_list = np.logspace(-3, 2, 6)
             x0 = csc_matrix((dim, 1))
@@ -1222,7 +1229,11 @@ if __name__ == '__main__':
             use_first_type,
             args.use_g,
         )
-        pool.starmap(partial_clerr, args_product)
+        if args.n_cpus == 1:
+            for cl, lr, in_lr in args_product:
+                partial_clerr(cl, lr, in_lr)
+        else:
+            pool.starmap(partial_clerr, args_product)
 
     else:
         raise NotImplementedError(f'Unknown algorithm: {alg}')

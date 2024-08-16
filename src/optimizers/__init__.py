@@ -6,4 +6,4 @@ from .clipped_shuffling import ClippedShuffling, ClippedShuffling2, \
 from .ig import Ig
 from .nesterov import Nesterov
 from .clipped_ig import ClippedIg
-from .clip_err import ClipERR, ClipERR2
+from .clerr import ClERR, ClERR2
