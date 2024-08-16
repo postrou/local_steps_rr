@@ -56,16 +56,20 @@ class Optimizer:
         self.x = x0.copy()
         initial_grad = self.loss.gradient(x0)
         self.trace.update_counter = 0
-        if self.trace_len < self.it_max + 1: # +1 because we also add 0-th iteration info
-            self.trace.xs = [x0.copy()] * self.trace_len
-            self.trace.its = [0] * self.trace_len
-            self.trace.ts = [0] * self.trace_len
-            self.trace.grad_estimators = [initial_grad] * self.trace_len
-        else:
-            self.trace.xs = [x0.copy()] * (self.it_max + 1)
-            self.trace.its = [0] * (self.it_max + 1)
-            self.trace.ts = [0] * (self.it_max + 1)
-            self.trace.grad_estimators = [initial_grad] * (self.trace_len + 1)
+        self.trace.xs = [x0.copy()]
+        self.trace.its = [0]
+        self.trace.ts = [0]
+        self.trace.grad_estimators = [initial_grad]
+        # if self.trace_len < self.it_max + 1: # +1 because we also add 0-th iteration info
+        #     self.trace.xs = [x0.copy()] * self.trace_len
+        #     self.trace.its = [0] * self.trace_len
+        #     self.trace.ts = [0] * self.trace_len
+        #     self.trace.grad_estimators = [initial_grad] * self.trace_len
+        # else:
+        #     self.trace.xs = [x0.copy()] * (self.it_max + 1)
+        #     self.trace.its = [0] * (self.it_max + 1)
+        #     self.trace.ts = [0] * (self.it_max + 1)
+        #     self.trace.grad_estimators = [initial_grad] * (self.trace_len + 1)
         self.it = 0
         self.t = 0
         self.t_start = time.time()
@@ -80,23 +84,24 @@ class Optimizer:
         # self.time_progress = int((self.trace_len - first_iterations) * self.t / self.t_max)
         # self.iterations_progress = int((self.trace_len - first_iterations) * (self.it / self.it_max))
         # if (max(self.time_progress, self.iterations_progress) > self.max_progress) or (self.it <= first_iterations):
-        if self.trace.update_counter < self.trace_len:
+        # if self.trace.update_counter < self.trace_len:
+        if self.it % (np.floor(self.it_max / self.trace_len)) == 0 or self.it == self.it_max:
             self.update_trace()
         self.max_progress = max(self.time_progress, self.iterations_progress)
         
     def update_trace(self):
         self.trace.update_counter += 1
-        assert len(self.trace.xs) > self.trace.update_counter, \
-            f'Length of trace.xs is {len(self.trace.xs)}, and counter={self.trace.update_counter}'
-        self.trace.xs[self.trace.update_counter] = self.x.copy()
-        self.trace.ts[self.trace.update_counter] = self.t
-        self.trace.its[self.trace.update_counter] = self.it
-        self.trace.grad_estimators[self.trace.update_counter] = self.loss.norm(
-            self.grad_estimator if self.grad_estimator is not None else self.grad
-        )
-        # self.trace.ts.append(self.t)
-        # self.trace.xs.append(self.x.copy())
-        # self.trace.ts.append(self.t)
-        # self.trace.its.append(self.it)
-        # self.trace.grad_estimators.append(self.loss.norm(self.grad_estimator) \
-        #     if self.grad_estimator is not None else self.loss.norm(self.grad))
+        # assert len(self.trace.xs) > self.trace.update_counter, \
+            # f'Length of trace.xs is {len(self.trace.xs)}, and counter={self.trace.update_counter}'
+        # self.trace.xs[self.trace.update_counter] = self.x.copy()
+        # self.trace.ts[self.trace.update_counter] = self.t
+        # self.trace.its[self.trace.update_counter] = self.it
+        # self.trace.grad_estimators[self.trace.update_counter] = self.loss.norm(
+        #     self.grad_estimator if self.grad_estimator is not None else self.grad
+        # )
+        self.trace.ts.append(self.t)
+        self.trace.xs.append(self.x.copy())
+        self.trace.ts.append(self.t)
+        self.trace.its.append(self.it)
+        self.trace.grad_estimators.append(self.loss.norm(self.grad_estimator) \
+            if self.grad_estimator is not None else self.loss.norm(self.grad))
