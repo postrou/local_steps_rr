@@ -30,6 +30,7 @@ class Shuffling(StochasticOptimizer):
             if steps_per_permutation
             else math.ceil(self.loss.n / batch_size)
         )
+        self.i = 0
         self.lr0 = lr0
         self.lr_max = lr_max
         self.lr_decay_coef = lr_decay_coef
