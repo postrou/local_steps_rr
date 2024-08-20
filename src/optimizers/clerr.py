@@ -34,10 +34,14 @@ class ClERR(Shuffling):
         self.outer_step_size = -1
         self.f_tolerance = f_tolerance
         self.use_g_in_outer_step = use_g_in_outer_step
-        self.grad_estimator = None
+
+    def init_run(self, *args, **kwargs):
+        super().init_run(*args, **kwargs)
+        self.i = 0
+        self.trace.outer_step_sizes = [self.outer_step_size]
     
     def step(self):
-        if self.grad_estimator is None:
+        if self.i == 0:
             self.grad_estimator = np.zeros_like(self.x)
             if not self.use_g_in_outer_step:
                 self.update_norm_grad_start_epoch()
@@ -61,7 +65,6 @@ class ClERR(Shuffling):
             # it enters here during 0-th step, so self.permutation is always
             #   initialized
             self.permutation = np.random.permutation(self.loss.n)
-            self.i = 0
             self.sampled_permutations += 1
 
         idx_perm = np.arange(self.i, min(self.loss.n, self.i + self.batch_size))
@@ -109,9 +112,7 @@ class ClERR(Shuffling):
 
     def update_trace(self):
         super().update_trace()
-        if self.outer_step_size != -1:
-            self.trace.outer_step_sizes.append(self.outer_step_size)
-
+        self.trace.outer_step_sizes.append(self.outer_step_size)
 
 
 class ClERR2(ClERR):
@@ -142,22 +143,12 @@ class ClERR2(ClERR):
         )
         self.clip_level = c_0 / c_1
         self.lr = 1 / (2 * c_0)
-        self.grad_estimator = None
    
     def perform_outer_step(self):
         self.outer_step_size = self.calculate_outer_step_size()
-
-        if self.use_g_in_outer_step:
-            print('ClERR-2 outer step size:', self.lr * self.outer_step_size)
-            print('ClERR outer step size:', 1 / (self.c_0 + self.c_1 * self.loss.norm(self.grad_estimator)), end='\n\n')
-        else:
-            print('ClERR-2 outer step size:', self.lr * self.outer_step_size)
-            print('ClERR outer step size:', 1 / (self.c_0 + self.c_1 * self.norm_grad_start_epoch), end='\n\n')
-        
-        self.x -= self.lr * self.outer_step_size * self.grad_estimator
         if not self.use_g_in_outer_step:
             self.update_norm_grad_start_epoch()
-        self.grad_estimator = np.zeros_like(self.x)
+        self.x -= self.lr * self.outer_step_size * self.grad_estimator
 
     def calculate_outer_step_size(self):
         """Calculating outer step size.
