@@ -95,8 +95,11 @@ class ClippedShuffling(Shuffling):
         if self.alpha_shift > 0:
             self.perform_shift()
         elif self.x_opt is None:
-            self.grad_estimator = self.clip(self.grad)
+            self.grad_estimator = self.grad
+            self.clip_coefficient = self.calculate_clip_coefficient(self.grad)
+            self.x -= self.lr * self.clip_coefficient * self.grad_estimator
         else:
+            self.grad_estimator = self.grad
             grad_opt = self.loss.stochastic_gradient(
                 self.x_opt, idx=idx, normalization=normalization
             )
@@ -105,11 +108,11 @@ class ClippedShuffling(Shuffling):
                 grad_opt_i = self.loss.stochastic_gradient(
                     self.x_opt_i, idx=idx, normalization=normalization
                 )
-                self.grad_estimator = grad_opt_i + self.clip(self.grad - grad_opt_i)
+                self.clip_coefficient = self.calculate_clip_coefficient(self.grad - grad_opt_i)
+                self.x -= self.lr * (grad_opt_i + self.clip_coefficient * (self.grad_estimator - grad_opt_i))
             else:
-                self.grad_estimator = grad_opt + self.clip(self.grad - grad_opt)
-
-        self.x -= self.lr * self.grad_estimator
+                self.clip_coefficient = self.calculate_clip_coefficient(self.grad - grad_opt)
+                self.x -= self.lr * (grad_opt + self.clip_coefficient * (self.grad_estimator - grad_opt))
 
     def perform_shift(self):
         id_shift = self.it % len(self.shifts)
@@ -127,7 +130,11 @@ class ClippedShuffling(Shuffling):
         self.shifts[id_shift] = shift_next_epoch
 
     def clip(self, grad):
-        return min(1, self.clip_level / self.loss.norm(grad)) * grad
+        self.clip_coefficient = self.calculate_clip_coefficient(grad)
+        return self.clip_coefficient * grad
+
+    def calculate_clip_coefficient(self, grad):
+        return min(1, self.clip_level / self.loss.norm(grad))
 
 
 class ClippedShuffling2(ClippedShuffling):
