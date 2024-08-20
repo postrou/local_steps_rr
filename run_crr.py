@@ -691,8 +691,16 @@ if __name__ == '__main__':
 
     # Get data and set all parameters
     print('Loading data')
+    alg = args.alg
     dataset = args.dataset
+    n_epochs = args.n_epochs
+    batch_size = args.batch_size
     if dataset.startswith('quadratic'):
+        n_seeds = 10
+        loss, x0, x_opt, n_seeds, stoch_it, trace_len, trace_path, plot_path = \
+            load_fourth_order_dataset(n_epochs, n_seeds, args.batch_size)
+
+
         is_noised = dataset == 'quadratic_noised'
         loss = load_quadratic_dataset(is_noised)
         f_opt, x_opt = loss.f_opt, loss.x_opt
@@ -758,30 +766,11 @@ if __name__ == '__main__':
         x_opt = nest_str_trace.xs[-1]
 
     elif dataset == 'fourth_order':
-        loss = load_fourth_order_dataset()
-        x, f_opt, x_opt = loss.x, loss.f_opt, loss.x_opt
-        n, dim = len(x), 1
-        x0 = np.array([1000.0])
-        n_epochs = args.n_epochs
-        batch_size = args.batch_size
         n_seeds = 10
-        stoch_it = n_epochs * n // batch_size
-        trace_len = 500
-
-        if x0 == x_opt:
-            trace_path = f'results/{dataset}/x0_x_opt/bs_{batch_size}/'
-            plot_path = f'plots/{dataset}/x0_x_opt/bs_{batch_size}'
-        else:
-            trace_path = f'results/{dataset}/x0_{x0[0]}/bs_{batch_size}/'
-            plot_path = f'plots/{dataset}/x0_{x0[0]}/bs_{batch_size}'
-        if not os.path.exists(trace_path):
-            os.makedirs(trace_path)
-        if not os.path.exists(plot_path):
-            os.makedirs(plot_path)
+        loss, x0, x_opt, n_seeds, stoch_it, trace_len, trace_path, plot_path = \
+            load_fourth_order_dataset(n_epochs, n_seeds, args.batch_size)
 
     print('trace path:', trace_path) 
-
-    alg = args.alg
 
     if alg == 'rr':
         assert args.lr_min is not None and args.lr_max is not None, \
