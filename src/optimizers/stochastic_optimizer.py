@@ -18,7 +18,7 @@ class StochasticOptimizer(Optimizer):
         super(StochasticOptimizer, self).__init__(loss=loss, *args, **kwargs)
         self.seeds = seeds
         if not seeds:
-            np.random.seed(42)
+            np.random.seed(0)
             self.seeds = [np.random.randint(100000) for _ in range(n_seeds)]
         self.finished_seeds = []
         self.trace = StochasticTrace(loss=loss)
