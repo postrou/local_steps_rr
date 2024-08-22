@@ -13,37 +13,49 @@ class StochasticTrace:
     Class that stores the logs of running a stochastic
     optimization method and plots the trajectory.
     """
-    def __init__(self, loss):
+    def __init__(self, loss, is_nn=False):
         self.loss = loss
-        self.xs_all = {}
+        self.is_nn = is_nn
+        if not is_nn:
+            self.xs_all = {}
+            self.loss_is_computed = False
         self.ts_all = {}
         self.its_all = {}
         self.loss_vals_all = {}
         self.grad_norms_last_iterate = {}
         self.its_converted_to_epochs = False
-        self.loss_is_computed = False
         self.step_size = None
         self.clip_level = None
         self.grad_estimators_norms_all = {}
         self.shift_grad_opt_diffs_all = {}
         
     def init_seed(self):
-        self.xs = []
+        if self.is_nn:
+            self.xs = []
+            self.loss_vals = None
+        else:
+            self.loss_vals = []
+            self.xs = None
         self.ts = []
         self.its = []
-        self.loss_vals = None
         self.grad_estimators_norms = []
         self.shift_grad_opt_diffs = []
         
     def append_seed_results(self, seed):
-        self.xs_all[seed] = self.xs.copy()
+        if self.is_nn:
+            assert self.loss_vals is not None
+            self.loss_vals_all[seed] = self.loss_vals.copy()
+        else:
+            self.xs_all[seed] = self.xs.copy()
+            self.loss_vals_all[seed] = self.loss_vals.copy() if self.loss_vals else None
         self.ts_all[seed] = self.ts.copy()
         self.its_all[seed] = self.its.copy()
-        self.loss_vals_all[seed] = self.loss_vals.copy() if self.loss_vals else None
         self.grad_estimators_norms_all[seed] = self.grad_estimators_norms.copy()
         self.shift_grad_opt_diffs_all[seed] = self.shift_grad_opt_diffs.copy()
     
     def compute_loss_of_iterates(self):
+        if self.is_nn:
+            raise Exception('Does no work for neural networks!')
         for seed, loss_vals in self.loss_vals_all.items():
             if loss_vals is None:
                 self.loss_vals_all[seed] = np.asarray([self.loss.value(x) for x in self.xs_all[seed]])
@@ -108,6 +120,8 @@ class StochasticTrace:
             ax.set_ylabel(r'$f(x)-f^*$')
         
     def plot_distances(self, x_opt=None, log_std=True, markevery=None, alpha=0.25, ax=None, *args, **kwargs):
+        if self.is_nn:
+            raise Exception('Does no work for neural networks!')
         if x_opt is None:
             if self.loss_is_computed:
                 f_opt = np.inf

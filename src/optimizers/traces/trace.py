@@ -1,5 +1,4 @@
 import numpy as np
-import numpy.linalg as la
 import matplotlib.pyplot as plt
 import os
 from pathlib import Path
