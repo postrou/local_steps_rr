@@ -96,14 +96,14 @@ class ClERRTestCase(unittest.TestCase):
         crr_trace.convert_its_to_epochs(batch_size=loss.n)
         crr_trace.compute_loss_of_iterates()
 
-        for i_seed, seed in enumerate(crr_trace.grad_estimators_all):
-            self.assertEqual(len(crr_trace.grad_estimators_all[seed]), trace_len + 1, \
+        for i_seed, seed in enumerate(crr_trace.grad_estimators_norms_all):
+            self.assertEqual(len(crr_trace.grad_estimators_norms_all[seed]), trace_len + 1, \
                 f'seed #{i_seed}')
             for i in range(n_epochs):
                 self.assertEqual(i, clerr_2_trace.its_all[seed][i], \
                     f'seed #{i_seed}, epoch #{i}')
-                crr_full_grad = crr_trace.grad_estimators_all[seed][i]
-                clerr_2_full_grad = clerr_2_trace.grad_estimators_all[seed][i]
+                crr_full_grad = crr_trace.grad_estimators_norms_all[seed][i]
+                clerr_2_full_grad = clerr_2_trace.grad_estimators_norms_all[seed][i]
                 self.assertAlmostEqual(
                     loss.norm(crr_full_grad), 
                     loss.norm(clerr_2_full_grad), 
@@ -156,14 +156,14 @@ class ClERRTestCase(unittest.TestCase):
         crr_trace.convert_its_to_epochs(batch_size=loss.n)
         crr_trace.compute_loss_of_iterates()
 
-        for i_seed, seed in enumerate(crr_trace.grad_estimators_all):
-            self.assertEqual(len(crr_trace.grad_estimators_all[seed]), trace_len + 1, \
+        for i_seed, seed in enumerate(crr_trace.grad_estimators_norms_all):
+            self.assertEqual(len(crr_trace.grad_estimators_norms_all[seed]), trace_len + 1, \
                 f'seed #{i_seed}')
             for i in range(n_epochs):
                 self.assertEqual(i, clerr_2_trace.its_all[seed][i], \
                     f'seed #{i_seed}, epoch #{i}')
-                crr_full_grad = crr_trace.grad_estimators_all[seed][i]
-                clerr_2_full_grad = clerr_2_trace.grad_estimators_all[seed][i]
+                crr_full_grad = crr_trace.grad_estimators_norms_all[seed][i]
+                clerr_2_full_grad = clerr_2_trace.grad_estimators_norms_all[seed][i]
                 self.assertAlmostEqual(
                     loss.norm(crr_full_grad), 
                     loss.norm(clerr_2_full_grad), 

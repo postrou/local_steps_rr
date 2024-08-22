@@ -14,7 +14,6 @@ class Trace:
     and plots the trajectory.
     """
     def __init__(self, loss):
-        self.update_counter = 0
         self.loss = loss
         self.xs = []
         self.ts = [] # time
@@ -22,7 +21,7 @@ class Trace:
         self.loss_vals = None
         self.its_converted_to_epochs = False
         self.loss_is_computed = False
-        self.grad_estimators = []
+        self.grad_estimators_norms = []
         self.shift_grad_opt_diffs = []
         
     def compute_loss_of_iterates(self):
