@@ -13,7 +13,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 
-from src.optimizers import ShuffleOnceSampler
+from src.optimizers_torch import ShuffleOnceSampler
 from src.loss_functions.models import ResNet18
 
 
@@ -182,16 +182,20 @@ def store_seed_results(
     test_gns_all[seed] = test_gns.copy()
     
     
-def train_shuffling(alg, n_seeds, n_epochs, batch_size, lr):
+def train_shuffling(test, alg, n_seeds, n_epochs, batch_size, lr, cl=None):
     print(f'Starting {alg} for lr={lr}')
-    log_dir = f'logs/cifar10/bs_{batch_size}'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    if not test:
+        # all stdout goes to log file
+        log_dir = f'logs/cifar10/bs_{batch_size}'
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
     
-    if alg == 'so':
-        log_fn = f'so_lr_{lr}_seeds_{n_seeds}_{n_epochs}.log'
-    log_path = os.path.join(log_dir, log_fn)
-    redirect_output(log_path)
+        if alg == 'so':
+            log_fn = f'so_lr_{lr}_seeds_{n_seeds}_{n_epochs}.log'
+        elif alg == 'cso':
+            log_fn = f'c_{cl}_lr_{lr}_so_seeds_{n_seeds}_{n_epochs}.log'
+        log_path = os.path.join(log_dir, log_fn)
+        redirect_output(log_path)
 
     results_dir = f'results/cifar10/bs_{batch_size}'
     if not os.path.exists(results_dir):
@@ -356,6 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_g', action='store_true')
     parser.add_argument('--n_cpus', type=int, default=1, help='number of processes to run in parallel')
     parser.add_argument('--cuda', type=int, default=-1, help='number of cuda to use (default -1 is for cpu)')
+    parser.add_argument('--test', action='store_true')
     args = parser.parse_args()
 
     alg = args.alg
@@ -375,6 +380,7 @@ if __name__ == '__main__':
     n_seeds = 3
     partial_so = partial(
         train_shuffling,
+        args.test,
         alg,
         n_seeds,
         n_epochs,
