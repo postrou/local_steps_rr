@@ -7,4 +7,3 @@ from .ig import Ig
 from .nesterov import Nesterov
 from .clipped_ig import ClippedIg
 from .clerr import ClERR, ClERR2
-from .shuffling_torch import ShuffleOnceSampler

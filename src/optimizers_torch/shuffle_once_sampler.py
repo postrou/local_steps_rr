@@ -3,7 +3,7 @@ import numpy as np
 
 
 class ShuffleOnceSampler(torch.utils.data.Sampler):
-    def __init__(self, data_source, batch_size):
+    def __init__(self, data_source):
         self.data_source = data_source
         self.num_samples = len(data_source)
         self.indices = np.arange(self.num_samples)
