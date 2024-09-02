@@ -3,6 +3,7 @@ import argparse
 import random
 from multiprocessing import Pool
 from functools import partial
+from itertools import product
 import pickle
 import sys
 
@@ -13,7 +14,7 @@ import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
 
-from src.optimizers_torch import ShuffleOnceSampler
+from src.optimizers_torch import ShuffleOnceSampler, ClippedSGD
 from src.loss_functions.models import ResNet18
 
 
@@ -37,13 +38,13 @@ def load_data(path, batch_size):
 
     train_data = torchvision.datasets.CIFAR10(
         root=path, train=True, download=True, transform=transform_train)
-    train_sampler = ShuffleOnceSampler(train_data, batch_size)
+    train_sampler = ShuffleOnceSampler(train_data)
     train_loader = torch.utils.data.DataLoader(
         train_data, batch_size=batch_size, sampler=train_sampler) 
 
     test_data = torchvision.datasets.CIFAR10(
         root=path, train=False, download=True, transform=transform_test)
-    test_sampler = ShuffleOnceSampler(test_data, batch_size)
+    test_sampler = ShuffleOnceSampler(test_data)
     test_loader = torch.utils.data.DataLoader(
         test_data, batch_size=batch_size, sampler=test_sampler)
     return train_loader, test_loader
@@ -200,17 +201,21 @@ def train_shuffling(test, alg, n_seeds, n_epochs, batch_size, lr, cl=None):
     results_dir = f'results/cifar10/bs_{batch_size}'
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
-    results_fn = f'so_lr_{lr}_seeds_{n_seeds}_{n_epochs}'
+    if alg == 'so':
+        results_fn = f'so_lr_{lr}_seeds_{n_seeds}_{n_epochs}'
+    elif alg == 'cso':
+        results_fn = f'c_{cl}_lr_{lr}_so_seeds_{n_seeds}_{n_epochs}'
     results_path = os.path.join(results_dir, results_fn)
     if os.path.exists(results_path):
-        print(f'Results for so, run for {n_seeds} seeds, {n_epochs} epochs with lr={lr} already exist!')
+        if alg == 'so':
+            print(f'Results for so, run for {n_seeds} seeds, {n_epochs} epochs with lr={lr} already exist!')
+        elif alg == 'cso':
+            print(f'Results for cso, run for {n_seeds} seeds, {n_epochs} epochs with cl={cl}, lr={lr} already exist!')
         return
 
     device = 'cuda'
     train_loader, test_loader = load_data('datasets/cifar10/', batch_size)
-    model, criterion = build_model(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-
+           
     train_loss_vals_all = {}
     train_acc_vals_all = {}
     train_gns_all = {}
@@ -225,12 +230,19 @@ def train_shuffling(test, alg, n_seeds, n_epochs, batch_size, lr, cl=None):
     # if not os.path.exists(checkpoint_dir):
         # os.makedirs(checkpoint_dir)
    
-    model.train()
     for seed in range(n_seeds):
         train_loss_vals, train_gns, train_acc_vals, \
             train_local_loss_vals, train_local_gns, train_local_acc_vals, \
                 test_loss_vals, test_gns, test_acc_vals = init_seed(seed, n_epochs)
-        # print('Computing and storing initial results...')
+
+        model, criterion = build_model(device)
+        model.train()
+        if alg == 'so':
+            optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+        elif alg == 'cso':
+            optimizer = ClippedSGD(params=model.parameters(), clip_level=cl, lr=lr)
+
+         # print('Computing and storing initial results...')
         compute_and_store_epoch_results(
             -1,
             train_loss_vals, 
@@ -245,16 +257,23 @@ def train_shuffling(test, alg, n_seeds, n_epochs, batch_size, lr, cl=None):
             criterion, 
             device
         )
-        print(f'💪💪💪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}')
-        print(f'🧪🧪🧪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}')
+        if alg == 'so':
+            print(f'💪💪💪 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}')
+            print(f'🧪🧪🧪 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}')
+        elif alg == 'cso':
+            print(f'💪💪💪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}')
+            print(f'🧪🧪🧪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}')
 
         initial_loss, initial_gn, initial_acc = None, None, None
         for epoch in range(n_epochs):
             # checkpoint_fn = f'so_lr_{lr}_seed_{seed}_epoch_{epoch}.pth'
             # checkpoint_path = os.path.join(checkpoint_dir, checkpoint_fn)
             # if not os.path.exists(checkpoint_path):
-            progress_bar = tqdm(train_loader, desc=f'🤖🤖🤖 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}', leave=True)
-            for i, (inputs, targets) in enumerate(progress_bar):
+            if alg == 'so':
+                progress_bar = tqdm(train_loader, desc=f'🤖🤖🤖 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}', leave=True)
+            elif alg == 'cso':
+                progress_bar = tqdm(train_loader, desc=f'🤖🤖🤖 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}', leave=True)
+            for inputs, targets in progress_bar:
                 optimizer.zero_grad()
                 inputs, targets = inputs.to(device), targets.to(device)
                 predicted, loss = predict_and_loss(inputs, targets, model, criterion)
@@ -299,13 +318,20 @@ def train_shuffling(test, alg, n_seeds, n_epochs, batch_size, lr, cl=None):
                 criterion, 
                 device
             )
-            print(f'💪💪💪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}')
-            print(f'🧪🧪🧪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}')
-            
+            if alg == 'so':
+                print(f'💪💪💪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}')
+                print(f'🧪🧪🧪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}')
+            elif alg == 'cso':
+                print(f'💪💪💪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}')
+                print(f'🧪🧪🧪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}')
+ 
             # torch.save(model.state_dict(), checkpoint_path)
 
 
-        print(f'🌱🌱🌱 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} finished!')
+        if alg == 'so':
+            print(f'🌱🌱🌱 SO | LR={lr} | Seed {seed + 1}/{n_seeds} finished!')
+        elif alg == 'cso':
+            print(f'🌱🌱🌱 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} finished!')
         store_seed_results(
             seed,
             train_loss_vals, 
@@ -364,7 +390,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     alg = args.alg
-    assert alg == 'so', 'Other algorithms are not implemented yet!'
+    assert alg == 'so' or alg == 'cso', 'Other algorithms are not implemented yet!'
 
     assert args.lr_min is not None and args.lr_max is not None, \
         f'You did not provide --lr_min or --lr_max for algorithm {alg}'
@@ -375,6 +401,8 @@ if __name__ == '__main__':
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.cuda)
 
     step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+    if alg == 'cso':
+        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
     batch_size = args.batch_size
     n_epochs = args.n_epochs
     n_seeds = 3
@@ -386,11 +414,18 @@ if __name__ == '__main__':
         n_epochs,
         batch_size
     )
-    if args.n_cpus == 1:
-        for lr in step_size_list:
-            partial_so(lr)
-    else:
-        pool = Pool(args.n_cpus)
-        pool.map(partial_so, step_size_list)
-
-    
+    if alg == 'so':
+        if args.n_cpus == 1:
+            for lr in step_size_list:
+                partial_so(lr)
+        else:
+            pool = Pool(args.n_cpus)
+            pool.map(partial_so, step_size_list)
+    elif alg == 'cso':
+        if args.n_cpus == 1:
+            for lr in step_size_list:
+                partial_so(lr)
+        else:
+            args_product = list(product(step_size_list, clip_level_list))
+            pool = Pool(args.n_cpus)
+            pool.starmap(partial_so, args_product)
