@@ -122,9 +122,10 @@ def set_seed(seed=42):
 
 
 def predict_and_loss(inputs, targets, model, criterion):
-    outputs = model(inputs)
-    _, predicted = outputs.max(1)
-    loss = criterion(outputs, targets)
+    with torch.autocast(device_type='cuda', dtype=torch.float16):
+        outputs = model(inputs)
+        _, predicted = outputs.max(1)
+        loss = criterion(outputs, targets)
     return predicted, loss
 
 
@@ -251,7 +252,8 @@ def store_seed_results(
 
 
 def train_shuffling(
-    test, alg, n_seeds, n_epochs, batch_size, use_g, lr, cl=None, inner_lr=None
+    test, alg, n_seeds, n_epochs, batch_size, use_g, lr, cl=None, inner_lr=None,
+    train_loader=None, test_loader=None
 ):
     if not test:
         # all stdout goes to log file
@@ -328,7 +330,8 @@ def train_shuffling(
         return
 
     device = "cuda"
-    train_loader, test_loader = load_data("datasets/cifar10/", batch_size)
+    if train_loader is None or test_loader is None:
+        train_loader, test_loader = load_data("datasets/cifar10/", batch_size)
 
     train_loss_vals_all = {}
     train_acc_vals_all = {}
@@ -471,9 +474,9 @@ def train_shuffling(
                     )
 
             for inputs, targets in progress_bar:
-                optimizer.zero_grad()
                 inputs, targets = inputs.to(device), targets.to(device)
                 predicted, loss = predict_and_loss(inputs, targets, model, criterion)
+                optimizer.zero_grad()
                 loss.backward()
 
                 local_loss = loss.item()
