@@ -95,7 +95,7 @@ def load_data(path, batch_size, pin_memory=False):
     )
     train_sampler = ShuffleOnceSampler(train_data)
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=batch_size, sampler=train_sampler
+        train_data, batch_size=batch_size, sampler=train_sampler, num_workers=4, pin_memory=True
     )
 
     test_data = torchvision.datasets.CIFAR10(
@@ -103,7 +103,7 @@ def load_data(path, batch_size, pin_memory=False):
     )
     test_sampler = ShuffleOnceSampler(test_data)
     test_loader = torch.utils.data.DataLoader(
-        test_data, batch_size=batch_size, sampler=test_sampler
+        test_data, batch_size=batch_size, sampler=test_sampler, num_workers=4, pin_memory=True
     )
     return train_loader, test_loader
 
@@ -435,43 +435,45 @@ def train_shuffling(
 
         initial_loss, initial_gn, initial_acc = None, None, None
         for epoch in range(n_epochs):
-            if alg == "so":
-                progress_bar = tqdm(
-                    train_loader,
-                    desc=f"🤖🤖🤖 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-                    leave=True,
-                )
-            elif alg == "cso":
-                progress_bar = tqdm(
-                    train_loader,
-                    desc=f"🤖🤖🤖 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-                    leave=True,
-                )
-            elif alg == "nastya":
+            # if alg == "so":
+            #     progress_bar = tqdm(
+            #         train_loader,
+            #         desc=f"🤖🤖🤖 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+            #         leave=True,
+            #     )
+            # elif alg == "cso":
+            #     progress_bar = tqdm(
+            #         train_loader,
+            #         desc=f"🤖🤖🤖 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+            #         leave=True,
+            #     )
+            if alg == 'nastya':
+            # elif alg == "nastya":
                 x_start_epoch = [
                     p.detach().requires_grad_(False) for p in model.parameters()
                 ]
-                progress_bar = tqdm(
-                    train_loader,
-                    desc=f"🤖🤖🤖 NASTYA | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-                    leave=True,
-                )
+            #     progress_bar = tqdm(
+            #         train_loader,
+            #         desc=f"🤖🤖🤖 NASTYA | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+            #         leave=True,
+            #     )
             elif alg == "clerr":
                 x_start_epoch = [
                     p.detach().requires_grad_(False) for p in model.parameters()
                 ]
-                if use_g:
-                    progress_bar = tqdm(
-                        train_loader,
-                        desc=f"🤖🤖🤖 ClERR-g | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-                        leave=True,
-                    )
-                else:
-                    progress_bar = tqdm(
-                        train_loader,
-                        desc=f"🤖🤖🤖 ClERR | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-                        leave=True,
-                    )
+            #     if use_g:
+            #         progress_bar = tqdm(
+            #             train_loader,
+            #             desc=f"🤖🤖🤖 ClERR-g | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+            #             leave=True,
+            #         )
+            #     else:
+            #         progress_bar = tqdm(
+            #             train_loader,
+            #             desc=f"🤖🤖🤖 ClERR | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+            #             leave=True,
+            #         )
+            progress_bar = train_loader
 
             for inputs, targets in progress_bar:
                 inputs, targets = inputs.to(device), targets.to(device)
@@ -491,11 +493,11 @@ def train_shuffling(
                 if alg in ["clerr", "nastya"]:
                     optimizer.update_g()
 
-                progress_bar.set_postfix(
-                    l_loss=f"{initial_loss:.3f}->{local_loss:.3f}",
-                    l_gn=f"{initial_gn:.3f}->{local_gn:.3f}",
-                    l_acc=f"{initial_acc:.3f}->{local_acc:.3f}",
-                )
+                # progress_bar.set_postfix(
+                    # l_loss=f"{initial_loss:.3f}->{local_loss:.3f}",
+                    # l_gn=f"{initial_gn:.3f}->{local_gn:.3f}",
+                    # l_acc=f"{initial_acc:.3f}->{local_acc:.3f}",
+                # )
                 train_local_loss_vals.append(local_loss)
                 train_local_gns.append(local_gn)
                 train_local_acc_vals.append(local_acc)
