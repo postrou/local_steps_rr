@@ -64,7 +64,7 @@ def find_optimal_point(loss, x0):
     N = 20
     for i in range(N):
         grad = loss.gradient(x)
-        hess = np.mean(12 * (loss.x - x)**2)
+        hess = np.mean(12 * (loss.x_0 - x)**2)
         x -= step_size * 1 / hess * grad
         f_value = loss.value(x)
     
