@@ -135,6 +135,6 @@ dmypy.json
 *.pdf
 results/*
 slurm_outputs/*
-datasets/*
+data/*
 tex/*
 ideas/*
