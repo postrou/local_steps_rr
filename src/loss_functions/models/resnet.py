@@ -101,6 +101,12 @@ class ResNet(nn.Module):
         out = self.linear(out)
         return out
 
+    def gradient_norm(self):
+        gn = 0
+        for p in self.parameters():
+            gn += p.grad.square().sum()
+        return gn.sqrt().item()
+
 
 def ResNet18():
     return ResNet(BasicBlock, [2, 2, 2, 2])
