@@ -10,108 +10,14 @@ import sys
 import torch
 import numpy as np
 from tqdm.auto import tqdm
-import torchvision
-import torchvision.transforms as transforms
-import torch.nn as nn
 
-from src.optimizers_torch import ShuffleOnceSampler, ClippedSGD, NASTYA, ClERR
-from src.loss_functions.models import ResNet18
+from src.optimizers_torch import ClippedSGD, NASTYA, ClERR, ClERRHeuristic
+from src.utils_torch import *
 
-
-def get_argparse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("alg", type=str)
-    parser.add_argument("--n_epochs", type=int, default=200)
-    parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument(
-        "--cl_min", type=int, default=None, help="min clip level in log scale"
-    )
-    parser.add_argument(
-        "--cl_max", type=int, default=None, help="max clip level in log scale"
-    )
-    parser.add_argument(
-        "--lr_min",
-        type=int,
-        default=None,
-        help="min step size in log scale (used for outer lr computation in NASTYA and ClERR)",
-    )
-    parser.add_argument(
-        "--lr_max",
-        type=int,
-        default=None,
-        help="max step size in log scale (used for outer lr computation in NASTYA and ClERR)",
-    )
-    parser.add_argument(
-        "--in_lr_min",
-        type=int,
-        default=None,
-        help="min inner step size in log scale (for CLERR)",
-    )
-    parser.add_argument(
-        "--in_lr_max",
-        type=int,
-        default=None,
-        help="max inner step size in log scale (for CLERR)",
-    )
-    parser.add_argument("--use_g", action="store_true")
-    parser.add_argument(
-        "--n_cpus", type=int, default=1, help="number of processes to run in parallel"
-    )
-    parser.add_argument(
-        "--cuda",
-        type=int,
-        default=-1,
-        help="number of cuda to use (default -1 is for cpu)",
-    )
-    parser.add_argument("--test", action="store_true")
-    return parser.parse_args()
-    
 
 def redirect_output(log_file):
     sys.stdout = open(log_file, "w")
     sys.stderr = open(log_file, "w")
-
-
-def load_data(path, batch_size, pin_memory=False):
-    print("Preparing data..")
-    transform_train = transforms.Compose(
-        [
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
-
-    transform_test = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ]
-    )
-
-    train_data = torchvision.datasets.CIFAR10(
-        root=path, train=True, download=True, transform=transform_train
-    )
-    train_sampler = ShuffleOnceSampler(train_data)
-    train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=batch_size, sampler=train_sampler, num_workers=4, pin_memory=True
-    )
-
-    test_data = torchvision.datasets.CIFAR10(
-        root=path, train=False, download=True, transform=transform_test
-    )
-    test_sampler = ShuffleOnceSampler(test_data)
-    test_loader = torch.utils.data.DataLoader(
-        test_data, batch_size=batch_size, sampler=test_sampler, num_workers=4, pin_memory=True
-    )
-    return train_loader, test_loader
-
-
-def build_model(device):
-    model = ResNet18().to(device)
-    criterion = nn.CrossEntropyLoss()
-    return model, criterion
 
 
 def set_seed(seed=42):
@@ -121,22 +27,8 @@ def set_seed(seed=42):
     torch.random.manual_seed(seed)
 
 
-def predict_and_loss(inputs, targets, model, criterion):
-    with torch.autocast(device_type='cuda', dtype=torch.float16):
-        outputs = model(inputs)
-        _, predicted = outputs.max(1)
-        loss = criterion(outputs, targets)
-    return predicted, loss
-
-
-def gradient_norm(model):
-    gn = 0
-    for p in model.parameters():
-        gn += p.grad.square().sum()
-    return gn.sqrt().item()
-
-
 def compute_and_store_epoch_results(
+    task,
     epoch,
     train_loss_vals,
     train_gns,
@@ -150,49 +42,21 @@ def compute_and_store_epoch_results(
     criterion,
     device,
 ):
-    train_loss, train_acc, train_gn, test_loss, test_acc, test_gn = epoch_result(
-        train_loader, test_loader, model, criterion, device
-    )
+    if task == "cifar10":
+        train_loss, train_acc, train_gn, test_loss, test_acc, test_gn = (
+            cifar_epoch_result(train_loader, test_loader, model, criterion, device)
+        )
+    elif task == "penn":
+        train_loss, train_gn, test_loss, test_gn = penn_epoch_result(
+            train_loader, test_loader, model, criterion, device
+        )
     train_loss_vals[epoch + 1] = train_loss
-    train_acc_vals[epoch + 1] = train_acc
     train_gns[epoch + 1] = train_gn
     test_loss_vals[epoch + 1] = test_loss
-    test_acc_vals[epoch + 1] = test_acc
     test_gns[epoch + 1] = test_gn
-
-
-def epoch_result(train_loader, test_loader, model, criterion, device):
-    model.eval()
-    model.zero_grad()
-    train_loss = 0
-    train_acc = 0
-    for inputs, targets in train_loader:
-        inputs, targets = inputs.to(device), targets.to(device)
-        # here we get mean loss over the batch
-        predicted, loss = predict_and_loss(inputs, targets, model, criterion)
-        loss_fix_normalization = loss * len(targets) / len(train_loader.dataset)
-        # this allows us to get the correct norm of the full gradient
-        loss_fix_normalization.backward()
-        train_loss += loss_fix_normalization.item()
-        train_acc += predicted.eq(targets).sum().item()
-    train_acc /= len(train_loader.dataset)
-    train_grad_norm = gradient_norm(model)
-
-    test_loss = 0
-    test_acc = 0
-    model.zero_grad()
-    for inputs, targets in test_loader:
-        inputs, targets = inputs.to(device), targets.to(device)
-        # here we get mean loss over the batch
-        predicted, loss = predict_and_loss(inputs, targets, model, criterion)
-        loss_fix_normalization = loss * len(targets) / len(test_loader.dataset)
-        # this allows us to get the correct norm of the full gradient
-        loss_fix_normalization.backward()
-        test_loss += loss_fix_normalization.item()
-        test_acc += predicted.eq(targets).sum().item()
-    test_acc /= len(test_loader.dataset)
-    test_grad_norm = gradient_norm(model)
-    return train_loss, train_acc, train_grad_norm, test_loss, test_acc, test_grad_norm
+    if task == "cifar10":
+        train_acc_vals[epoch + 1] = train_acc
+        test_acc_vals[epoch + 1] = test_acc
 
 
 def init_seed(seed, n_epochs):
@@ -217,6 +81,48 @@ def init_seed(seed, n_epochs):
         test_gns,
         test_acc_vals,
     )
+
+
+def init_optimizer(
+    alg, parameters, n_batches, lr, cl, inner_lr, inner_cl, c_0=None, c_1=None
+):
+    if alg == "so":
+        optimizer = torch.optim.SGD(parameters, lr=lr)
+    elif alg == "cso":
+        optimizer = ClippedSGD(params=parameters, clip_level=cl, lr=lr)
+    elif alg == "nastya":
+        optimizer = NASTYA(
+            params=parameters,
+            n_batches=n_batches,
+            lr=inner_lr,
+            outer_lr=lr,
+        )
+    elif alg == "clerr":
+        if c_0 is None:
+            c_0 = 1 / (2 * lr)
+        if c_1 is None:
+            c_1 = c_0 / cl
+        optimizer = ClERR(
+            params=parameters,
+            c_0=c_0,
+            c_1=c_1,
+            n_batches=n_batches,
+            lr=inner_lr,
+            use_g_in_outer_step=True,
+        )
+    elif alg == "clerr_heuristic":
+        if c_0 is None:
+            c_0 = 1 / (2 * lr)
+        if c_1 is None:
+            c_1 = c_0 / cl
+        optimizer = ClERRHeuristic(
+            params=parameters,
+            c_0=c_0,
+            c_1=c_1,
+            in_clip_level=inner_cl,
+            lr=inner_lr,
+        )
+    return optimizer
 
 
 def store_seed_results(
@@ -251,13 +157,72 @@ def store_seed_results(
     test_gns_all[seed] = test_gns.copy()
 
 
-def train_shuffling(
-    test, alg, n_seeds, n_epochs, batch_size, use_g, lr, cl=None, inner_lr=None,
-    train_loader=None, test_loader=None
+def print_train_test_results(
+    alg,
+    seed,
+    n_seeds,
+    epoch,
+    n_epochs,
+    train_loss,
+    train_gn,
+    test_loss,
+    test_gn,
+    lr,
+    cl=None,
+    inner_lr=None,
+    inner_cl=None,
+    c_0=None,
+    c_1=None,
+    train_acc=None,
+    test_acc=None,
 ):
+    if alg == "so":
+        train_str = f"💪💪💪 SO | LR={lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+        test_str = f"🧪🧪🧪 SO | LR={lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+    elif alg == "cso":
+        train_str = f"💪💪💪 CSO | CL={cl} | LR={lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+        test_str = f"🧪🧪🧪 CSO | CL={cl} | LR={lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+    elif alg == "nastya":
+        train_str = f"💪💪💪 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+        test_str = f"🧪🧪🧪 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+    elif alg == "clerr":
+        train_str = f"💪💪💪 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+        test_str = f"🧪🧪🧪 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+    elif alg == "clerr_heuristic":
+        if c_0 is None and c_1 is None:
+            train_str = f"💪💪💪 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+            test_str = f"🧪🧪🧪 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+        else:
+            train_str = f"💪💪💪 ClERR-heuristic | c_0={cl} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+            test_str = f"🧪🧪🧪 ClERR-heuristic | c_0={cl} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+
+    if train_acc is not None and test_acc is not None:
+        train_str += f" | Train acc={train_acc:.4f}"
+        test_str += f" | Test acc={test_acc:.4f}"
+    print(train_str)
+    print(test_str)
+
+
+def train_shuffling(
+    test,
+    task,
+    alg,
+    n_seeds,
+    n_epochs,
+    batch_size,
+    lr,
+    cl=None,
+    inner_lr=None,
+    inner_cl=None,
+    c_0=None,
+    c_1=None,
+    train_loader=None,
+    test_loader=None,
+):
+    assert task in ["cifar10", "penn"], f"Task {task} is not implemented!"
     if not test:
         # all stdout goes to log file
-        log_dir = f"logs/cifar10/bs_{batch_size}"
+        log_dir = f"logs/{task}/bs_{batch_size}"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
@@ -270,14 +235,16 @@ def train_shuffling(
                 f"nastya_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}.log"
             )
         elif alg == "clerr":
-            if use_g:
-                log_fn = f"clerr_g_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}.log"
+            log_fn = f"clerr_g_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}.log"
+        elif alg == "clerr_heuristic":
+            if c_0 is None and c_1 is None:
+                log_fn = f"clerr_heuristic_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}.log"
             else:
-                log_fn = f"clerr_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}.log"
+                log_fn = f"clerr_heuristic_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}.log"
         log_path = os.path.join(log_dir, log_fn)
         redirect_output(log_path)
 
-    results_dir = f"results/cifar10/bs_{batch_size}"
+    results_dir = f"results/{task}/bs_{batch_size}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
     if alg == "so":
@@ -290,16 +257,20 @@ def train_shuffling(
         print(f"Starting {alg} for lr={lr}, inner_lr={inner_lr}")
         results_fn = f"nastya_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}"
     elif alg == "clerr":
-        if use_g:
-            print(f"Starting {alg}-g for cl={cl}, lr={lr}, inner_lr={inner_lr}")
-            results_fn = (
-                f"clerr_g_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}"
+        print(f"Starting {alg}-g for cl={cl}, lr={lr}, inner_lr={inner_lr}")
+        results_fn = (
+            f"clerr_g_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}"
+        )
+    elif alg == "clerr_heuristic":
+        assert inner_cl is not None and inner_lr is not None
+        if c_0 is None or c_1 is None:
+            print(
+                f"Starting {alg} for cl={cl}, lr={lr}, inner_lr={inner_lr}, inner_cl={inner_cl}"
             )
+            results_fn = f"clerr_heuristic_c_{cl}_lr_{lr}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
         else:
-            print(f"Starting {alg} for cl={cl}, lr={lr}, inner_lr={inner_lr}")
-            results_fn = (
-                f"clerr_c_{cl}_lr_{lr}_in_lr_{inner_lr}_so_seeds_{n_seeds}_{n_epochs}"
-            )
+            print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}")
+            results_fn = f"clerr_heuristic_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
     results_path = os.path.join(results_dir, results_fn)
     if os.path.exists(results_path):
         if alg == "so":
@@ -312,26 +283,35 @@ def train_shuffling(
             )
         elif alg == "nastya":
             print(
-                f"Results for nastya-so, run for {n_seeds} seeds, {n_epochs} with lr={lr}, inner_lr={inner_lr} already exist!"
+                f"Results for nastya-so, run for {n_seeds} seeds, {n_epochs} epochs with lr={lr}, inner_lr={inner_lr} already exist!"
             )
         elif alg == "nastya":
             print(
-                f"Results for nastya-so, run for {n_seeds} seeds, {n_epochs} with lr={lr}, inner_lr={inner_lr} already exist!"
+                f"Results for nastya-so, run for {n_seeds} seeds, {n_epochs} epochs with lr={lr}, inner_lr={inner_lr} already exist!"
             )
         elif alg == "clerr":
-            if use_g:
+            print(
+                f"Results for clerr-g-so, run for {n_seeds} seeds, {n_epochs} epochs with cl={cl},  lr={lr}, inner_lr={inner_lr} already exist!"
+            )
+        elif alg == "clerr_heuristic":
+            if c_0 is None or c_1 is None:
                 print(
-                    f"Results for clerr-g-so, run for {n_seeds} seeds, {n_epochs} with cl={cl},  lr={lr}, inner_lr={inner_lr} already exist!"
+                    f"Results for clerr-heuristic, run for {n_seeds} seeds, {n_epochs} epochs with c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}, inner_cl={inner_cl} already exist!"
                 )
             else:
                 print(
-                    f"Results for clerr-so, run for {n_seeds} seeds, {n_epochs} with cl={cl},  lr={lr}, inner_lr={inner_lr} already exist!"
+                    f"Results for clerr-heuristic, run for {n_seeds} seeds, {n_epochs} epochs with cl={cl}, lr={lr}, inner_lr={inner_lr}, inner_cl={inner_cl} already exist!"
                 )
         return
 
     device = "cuda"
     if train_loader is None or test_loader is None:
-        train_loader, test_loader = load_data("datasets/cifar10/", batch_size)
+        if task == "cifar10":
+            train_loader, test_loader = cifar_load_data("data/cifar10/", batch_size)
+        elif task == "penn":
+            n_tokens, train_loader, test_loader = penn_load_data(
+                "data/penn/", batch_size
+            )
 
     train_loss_vals_all = {}
     train_acc_vals_all = {}
@@ -356,33 +336,18 @@ def train_shuffling(
             test_acc_vals,
         ) = init_seed(seed, n_epochs)
 
-        model, criterion = build_model(device)
+        if task == "cifar10":
+            model, criterion = build_resnet_model(device)
+        elif task == "penn":
+            model, criterion = build_lstm_model(n_tokens, device)
         model.train()
-        if alg == "so":
-            optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-        elif alg == "cso":
-            optimizer = ClippedSGD(params=model.parameters(), clip_level=cl, lr=lr)
-        elif alg == "nastya":
-            optimizer = NASTYA(
-                params=model.parameters(),
-                n_batches=len(train_loader),
-                lr=inner_lr,
-                outer_lr=lr,
-            )
-        elif alg == "clerr":
-            c_0 = 1 / (2 * lr)
-            c_1 = c_0 / cl
-            optimizer = ClERR(
-                params=model.parameters(),
-                c_0=c_0,
-                c_1=c_1,
-                n_batches=len(train_loader),
-                lr=inner_lr,
-                use_g_in_outer_step=use_g,
-            )
+        optimizer = init_optimizer(
+            alg, model.parameters(), len(train_loader), lr, cl, inner_lr, inner_cl, c_0, c_1
+        )
 
         # print('Computing and storing initial results...')
         compute_and_store_epoch_results(
+            task,
             -1,
             train_loss_vals,
             train_gns,
@@ -396,120 +361,114 @@ def train_shuffling(
             criterion,
             device,
         )
-        if alg == "so":
-            print(
-                f"💪💪💪 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}"
-            )
-            print(
-                f"🧪🧪🧪 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}"
-            )
-        elif alg == "cso":
-            print(
-                f"💪💪💪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}"
-            )
-            print(
-                f"🧪🧪🧪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}"
-            )
-        elif alg == "nastya":
-            print(
-                f"💪💪💪 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}"
-            )
-            print(
-                f"🧪🧪🧪 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}"
-            )
-        elif alg == "clerr":
-            if use_g:
-                print(
-                    f"💪💪💪 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}"
-                )
-                print(
-                    f"🧪🧪🧪 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}"
-                )
-            else:
-                print(
-                    f"💪💪💪 ClERR-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Train loss={train_loss_vals[0]:.4f} | Train gn={train_gns[0]:.4f} | Train acc={train_acc_vals[0]:.4f}"
-                )
-                print(
-                    f"🧪🧪🧪 ClERR-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {0}/{n_epochs} | Test loss={test_loss_vals[0]:.4f} | Test gn={test_gns[0]:.4f} | Test acc={test_acc_vals[0]:.4f}"
-                )
+
+        train_acc = train_acc_vals[0] if task == "cifar10" else None
+        test_acc = test_acc_vals[0] if task == "cifar10" else None
+        print_train_test_results(
+            alg,
+            seed + 1,
+            n_seeds,
+            0,
+            n_epochs,
+            train_loss_vals[0],
+            train_gns[0],
+            test_loss_vals[0],
+            test_gns[0],
+            lr,
+            cl,
+            inner_lr,
+            inner_cl,
+            c_0,
+            c_1,
+            train_acc,
+            test_acc,
+        )
 
         initial_loss, initial_gn, initial_acc = None, None, None
         for epoch in range(n_epochs):
-            # if alg == "so":
-            #     progress_bar = tqdm(
-            #         train_loader,
-            #         desc=f"🤖🤖🤖 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-            #         leave=True,
-            #     )
-            # elif alg == "cso":
-            #     progress_bar = tqdm(
-            #         train_loader,
-            #         desc=f"🤖🤖🤖 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-            #         leave=True,
-            #     )
-            if alg == 'nastya':
-            # elif alg == "nastya":
+            if alg == "so":
+                progress_bar = tqdm(
+                    train_loader,
+                    desc=f"🤖🤖🤖 SO | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+                    leave=True,
+                )
+            elif alg == "cso":
+                progress_bar = tqdm(
+                    train_loader,
+                    desc=f"🤖🤖🤖 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+                    leave=True,
+                )
+            elif alg == "nastya":
                 x_start_epoch = [
                     p.detach().requires_grad_(False) for p in model.parameters()
                 ]
-            #     progress_bar = tqdm(
-            #         train_loader,
-            #         desc=f"🤖🤖🤖 NASTYA | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-            #         leave=True,
-            #     )
+                progress_bar = tqdm(
+                    train_loader,
+                    desc=f"🤖🤖🤖 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+                    leave=True,
+                )
             elif alg == "clerr":
                 x_start_epoch = [
                     p.detach().requires_grad_(False) for p in model.parameters()
                 ]
-            #     if use_g:
-            #         progress_bar = tqdm(
-            #             train_loader,
-            #             desc=f"🤖🤖🤖 ClERR-g | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-            #             leave=True,
-            #         )
-            #     else:
-            #         progress_bar = tqdm(
-            #             train_loader,
-            #             desc=f"🤖🤖🤖 ClERR | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
-            #             leave=True,
-            #         )
-            progress_bar = train_loader
-
-            for inputs, targets in progress_bar:
-                inputs, targets = inputs.to(device), targets.to(device)
-                predicted, loss = predict_and_loss(inputs, targets, model, criterion)
-                optimizer.zero_grad()
-                loss.backward()
-
-                local_loss = loss.item()
-                local_gn = gradient_norm(model)
-                local_acc = predicted.eq(targets).sum().item() / len(targets)
-                if initial_loss is None or initial_gn is None or initial_acc is None:
-                    initial_loss = local_gn
-                    initial_gn = local_gn
-                    initial_acc = local_acc
-
-                optimizer.step()
-                if alg in ["clerr", "nastya"]:
-                    optimizer.update_g()
-
-                # progress_bar.set_postfix(
-                    # l_loss=f"{initial_loss:.3f}->{local_loss:.3f}",
-                    # l_gn=f"{initial_gn:.3f}->{local_gn:.3f}",
-                    # l_acc=f"{initial_acc:.3f}->{local_acc:.3f}",
-                # )
-                train_local_loss_vals.append(local_loss)
-                train_local_gns.append(local_gn)
-                train_local_acc_vals.append(local_acc)
-
-            if alg in ["nastya", "clerr"]:
-                if use_g:
-                    optimizer.outer_step(x_start_epoch)
+                progress_bar = tqdm(
+                    train_loader,
+                    desc=f"🤖🤖🤖 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+                    leave=True,
+                )
+            elif alg == 'clerr_heuristic':
+                x_start_epoch = [
+                    p.detach().requires_grad_(False) for p in model.parameters()
+                ]
+                if c_0 is None and c_1 is None:
+                    progress_bar = tqdm(
+                        train_loader,
+                        desc=f"🤖🤖🤖 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+                        leave=True,
+                    )
                 else:
-                    norm_grad_start_epoch = train_gns[epoch]
-                    optimizer.outer_step(x_start_epoch, norm_grad_start_epoch)
+                    progress_bar = tqdm(
+                        train_loader,
+                        desc=f"🤖🤖🤖 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs}",
+                        leave=True,
+                    )
+ 
+            # progress_bar = train_loader
+
+            if task == "cifar10":
+                cifar_train_epoch(
+                    progress_bar,
+                    model,
+                    criterion,
+                    optimizer,
+                    train_local_loss_vals,
+                    train_local_gns,
+                    train_local_acc_vals,
+                    initial_loss,
+                    initial_gn,
+                    initial_acc,
+                    device,
+                )
+            elif task == "penn":
+                penn_train_epoch(
+                    progress_bar,
+                    model,
+                    criterion,
+                    optimizer,
+                    batch_size,
+                    train_local_loss_vals,
+                    train_local_gns,
+                    initial_loss,
+                    initial_gn,
+                    device,
+                )
+
+            if type(optimizer) in [ClERR, NASTYA]:
+                optimizer.outer_step(x_start_epoch)
                 optimizer.init_g()
+
             compute_and_store_epoch_results(
+                task,
                 epoch,
                 train_loss_vals,
                 train_gns,
@@ -523,42 +482,28 @@ def train_shuffling(
                 criterion,
                 device,
             )
-            if alg == "so":
-                print(
-                    f"💪💪💪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}"
-                )
-                print(
-                    f"🧪🧪🧪 SO | Lr={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}"
-                )
-            elif alg == "cso":
-                print(
-                    f"💪💪💪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}"
-                )
-                print(
-                    f"🧪🧪🧪 CSO | CL={cl} | LR={lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}"
-                )
-            elif alg == "nastya":
-                print(
-                    f"💪💪💪 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}"
-                )
-                print(
-                    f"🧪🧪🧪 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}"
-                )
-            elif alg == "clerr":
-                if use_g:
-                    print(
-                        f"💪💪💪 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}"
-                    )
-                    print(
-                        f"🧪🧪🧪 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}"
-                    )
-                else:
-                    print(
-                        f"💪💪💪 ClERR-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Train loss={train_loss_vals[epoch + 1]:.4f} | Train gn={train_gns[epoch + 1]:.4f} | Train acc={train_acc_vals[epoch + 1]:.4f}"
-                    )
-                    print(
-                        f"🧪🧪🧪 ClERR-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} | Epoch {epoch + 1}/{n_epochs} | Test loss={test_loss_vals[epoch + 1]:.4f} | Test gn={test_gns[epoch + 1]:.4f} | Test acc={test_acc_vals[epoch + 1]:.4f}"
-                    )
+
+            train_acc = train_acc_vals[epoch + 1] if task == "cifar10" else None
+            test_acc = test_acc_vals[epoch + 1] if task == "cifar10" else None
+            print_train_test_results(
+                alg,
+                seed + 1,
+                n_seeds,
+                epoch + 1,
+                n_epochs,
+                train_loss_vals[epoch + 1],
+                train_gns[epoch + 1],
+                test_loss_vals[epoch + 1],
+                test_gns[epoch + 1],
+                lr,
+                cl,
+                inner_lr,
+                inner_cl,
+                c_0,
+                c_1,
+                train_acc,
+                test_acc,
+            )
 
         if alg == "so":
             print(f"🌱🌱🌱 SO | LR={lr} | Seed {seed + 1}/{n_seeds} finished!")
@@ -571,13 +516,17 @@ def train_shuffling(
                 f"🌱🌱🌱 NASTYA-SO | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} finished!"
             )
         elif alg == "clerr":
-            if use_g:
+            print(
+                f"🌱🌱🌱 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} finished!"
+            )
+        elif alg == "clerr_heuristic":
+            if c_0 is None and c_1 is None:
                 print(
-                    f"🌱🌱🌱 ClERR-g-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} finished!"
+                    f"🌱🌱🌱 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={cl} | Seed {seed + 1}/{n_seeds} finished!"
                 )
             else:
                 print(
-                    f"🌱🌱🌱 ClERR-SO | CL={cl} | LR={lr} | Inner LR={inner_lr} | Seed {seed + 1}/{n_seeds} finished!"
+                    f"🌱🌱🌱 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={cl} | Seed {seed + 1}/{n_seeds} finished!"
                 )
         store_seed_results(
             seed,
@@ -604,36 +553,114 @@ def train_shuffling(
     result = {
         "train_loss": train_loss_vals_all,
         "train_gn": train_gns_all,
-        "train_acc": train_acc_vals_all,
         "train_local_loss": train_local_loss_vals_all,
         "train_local_gn": train_local_gns_all,
         "train_local_acc": train_local_acc_vals_all,
         "test_loss": test_loss_vals_all,
         "test_gn": test_gns_all,
-        "test_acc": test_acc_vals_all,
     }
+    if task == "cifar10":
+        result["train_acc"] = train_acc_vals_all
+        result["test_acc"] = test_acc_vals_all
 
     with open(results_path, "wb") as f:
         pickle.dump(result, f)
+
+
+def get_argparse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("alg", type=str)
+    parser.add_argument("task", type=str)
+    parser.add_argument("--n_epochs", type=int, default=200)
+    parser.add_argument("--batch_size", type=int, default=256)
+    parser.add_argument(
+        "--cl_min", type=int, default=None, help="min clip level in log scale"
+    )
+    parser.add_argument(
+        "--cl_max", type=int, default=None, help="max clip level in log scale"
+    )
+    parser.add_argument(
+        "--lr_min",
+        type=int,
+        default=None,
+        help="min step size in log scale (used for outer lr computation in NASTYA and ClERR)",
+    )
+    parser.add_argument(
+        "--lr_max",
+        type=int,
+        default=None,
+        help="max step size in log scale (used for outer lr computation in NASTYA and ClERR)",
+    )
+    parser.add_argument(
+        "--in_lr_min",
+        type=int,
+        default=None,
+        help="min inner step size in log scale (for CLERR)",
+    )
+    parser.add_argument(
+        "--in_lr_max",
+        type=int,
+        default=None,
+        help="max inner step size in log scale (for CLERR)",
+    )
+    parser.add_argument(
+        "--in_cl",
+        type=int,
+        default=None,
+        help="clip level for inner step size for ClERR-Heuristic algorithm",
+    )
+    parser.add_argument(
+        "--c_0_min",
+        type=int,
+        default=None,
+        help="min of constant c_0 in log scale, used in calculation of outer step size in ClERR and ClERR-Heuristic (now implemented only for ClERR-Heuristic)",
+    )
+    parser.add_argument(
+        "--c_0_max",
+        type=int,
+        default=None,
+        help="max constant c_0 in log scale, used in calculation of outer step size in ClERR and ClERR-Heuristic (now implemented only for ClERR-Heuristic)",
+    )
+    parser.add_argument(
+        "--c_1_min",
+        type=int,
+        default=None,
+        help="min constant c_1 in log scale, used in calculation of outer step size in ClERR and ClERR-Heuristic (now implemented only for ClERR-Heuristic)",
+    )
+    parser.add_argument(
+        "--c_1_max",
+        type=int,
+        default=None,
+        help="max constant c_1 in log scale, used in calculation of outer step size in ClERR and ClERR-Heuristic (now implemented only for ClERR-Heuristic)",
+    )
+    parser.add_argument(
+        "--n_cpus", type=int, default=1, help="number of processes to run in parallel"
+    )
+    parser.add_argument(
+        "--cuda",
+        type=int,
+        default=-1,
+        help="number of cuda to use (default -1 is for cpu)",
+    )
+    parser.add_argument("--test", action="store_true")
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = get_argparse_args()
 
     alg = args.alg
-    assert alg in [
-        "so",
-        "cso",
-        "nastya",
-        "clerr",
-    ], "Other algorithms are not implemented yet!"
+    task = args.task
+    assert alg in ["so", "cso", "nastya", "clerr", "clerr_heuristic"]
+    assert task in ["cifar10", "penn"]
 
-    assert (
-        args.lr_min is not None and args.lr_max is not None
-    ), f"You did not provide --lr_min or --lr_max for algorithm {alg}"
-    step_size_list = np.logspace(
-        args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1
-    )
+    if alg != 'clerr_heuristic':
+        assert (
+            args.lr_min is not None and args.lr_max is not None
+        ), f"You did not provide --lr_min or --lr_max for algorithm {alg}"
+        step_size_list = np.logspace(
+            args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1
+        )
 
     if alg in ["cso", "clerr"]:
         assert (
@@ -651,6 +678,49 @@ if __name__ == "__main__":
             args.in_lr_min, args.in_lr_max, args.in_lr_max - args.in_lr_min + 1
         )
 
+    if alg == "clerr_heuristic":
+        assert (
+            args.in_lr_min is not None
+            and args.in_lr_max is not None
+            and args.in_lr_min == args.in_lr_max
+        ), "For clerr_heuristic we fix inner learning rate, which is equal to the best learning rate of cso"
+        in_step_size = [10**args.in_lr_min]
+        assert (
+            args.in_cl is not None
+        ), "You did not provide --in_cl for algorithm clerr_heuristic!"
+        in_clip_level = [10**args.in_cl]
+
+        assert (
+            args.lr_min is not None
+            and args.lr_max is not None
+            and args.cl_min is not None
+            and args.cl_max is not None
+        ) or (
+            args.c_0_min is not None
+            and args.c_0_max is not None
+            and args.c_1_min is not None
+            and args.c_1_max is not None
+        ), f"You should either provide lr with cl or c_0 with c_1 for {alg}"
+
+        if args.lr_min is not None and args.lr_max is not None:
+            step_size_list = np.logspace(
+                args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1
+            )
+            clip_level_list = np.logspace(
+                args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1
+            )
+            c_0_list = [None]
+            c_1_list = [None]
+        if args.c_0_min is not None and args.c_0_max is not None:
+            c_0_list = np.logspace(
+                args.c_0_min, args.c_0_max, args.c_0_max - args.c_0_min + 1
+            )
+            c_1_list = np.logspace(
+                args.c_1_min, args.c_1_max, args.c_1_max - args.c_1_min + 1
+            )
+            step_size_list = [None]
+            clip_level_list = [None]
+
     if args.cuda != -1:
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         os.environ["XjA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -658,10 +728,9 @@ if __name__ == "__main__":
 
     batch_size = args.batch_size
     n_epochs = args.n_epochs
-    use_g = args.use_g
     n_seeds = 3
     partial_train = partial(
-        train_shuffling, args.test, alg, n_seeds, n_epochs, batch_size, use_g
+        train_shuffling, args.test, task, alg, n_seeds, n_epochs, batch_size
     )
     if alg == "so":
         if args.n_cpus == 1:
@@ -695,6 +764,24 @@ if __name__ == "__main__":
         if args.n_cpus == 1:
             for lr, cl, in_lr in args_product:
                 partial_train(lr, cl, in_lr)
+        else:
+            pool = Pool(args.n_cpus)
+            pool.starmap(partial_train, args_product)
+
+    elif alg == "clerr_heuristic":
+        args_product = list(
+            product(
+                step_size_list,
+                clip_level_list,
+                in_step_size,
+                in_clip_level,
+                c_0_list,
+                c_1_list,
+            )
+        )
+        if args.n_cpus == 1:
+            for lr, cl, in_lr, in_cl, c_0, c_1 in args_product:
+                partial_train(lr, cl, in_lr, in_cl, c_0, c_1)
         else:
             pool = Pool(args.n_cpus)
             pool.starmap(partial_train, args_product)

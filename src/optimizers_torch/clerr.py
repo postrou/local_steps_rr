@@ -1,6 +1,8 @@
 import torch
+from torch.nn.utils import clip_grad_norm_
 
 from .nastya import NASTYA
+from .clipped_shuffling import ClippedSGD
 
 
 class ClERR(NASTYA):
@@ -37,3 +39,22 @@ class ClERR(NASTYA):
         for pg in param_grads:
             gn += pg.square().sum()
         return gn.sqrt()
+
+
+class ClERRHeuristic(ClERR):
+    def __init__(self, c_0, c_1, in_clip_level, *args, **kwargs):
+        super().__init__(c_0, c_1, None, True, *args, **kwargs)
+        self.in_clip_level = in_clip_level
+
+    def step(self, closure=None):
+        gn = self.grad_norm(self.param_groups[0]['params'])
+        clip_coef = max(1, self.in_clip_level / gn)
+        clip_grad_norm_(self.param_groups[0]['params'], self.in_clip_level)
+        super(NASTYA, self).step(closure)
+        self.update_g(clip_coef)
+
+    def update_g(self, clip_coef):
+        for i, pg in enumerate(self.param_groups):
+            gamma = clip_coef * pg['lr']
+            for j, p in enumerate(pg['params']):
+                self.g[i][j] += gamma * p.grad.detach()
