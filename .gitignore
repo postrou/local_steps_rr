@@ -138,3 +138,6 @@ slurm_outputs/*
 data/*
 tex/*
 ideas/*
+old_notebooks/*
+nohup.out
+corpus*
