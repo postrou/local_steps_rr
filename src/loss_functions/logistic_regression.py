@@ -4,7 +4,7 @@ import numpy as np
 import numpy.linalg as la
 from sklearn.utils.extmath import row_norms, safe_sparse_dot
 
-from datasets import get_dataset
+from data import get_dataset
 from .loss_oracle import Oracle
 from .utils import safe_sparse_add, safe_sparse_multiply, safe_sparse_norm
 
