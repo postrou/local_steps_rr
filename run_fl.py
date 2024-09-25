@@ -4,71 +4,79 @@ from multiprocessing import Pool
 import pickle
 from functools import partial
 from itertools import product
+from copy import deepcopy
 
 import numpy as np
 
 
-def generate_data():
+def generate_data(dim=1):
     np.random.seed(0)
-    data = np.random.uniform(-10, 10, 1000)
-    data.sort()
+    data = np.random.uniform(-10, 10, (1000, dim))
+    data = np.array(sorted(data, key=np.linalg.norm))
     for i in range(len(data) - 1):
-        assert data[i] < data[i + 1]
+        assert np.linalg.norm((data[i])) < np.linalg.norm(np.linalg.norm(data[i + 1]))
     return data
 
-    
+
 def store_result(result, result_path):
     with open(result_path, 'wb') as f:
         pickle.dump(result, f)
 
 
 def value(x, data_batch):
-    return np.mean([(x - x_0) ** 4 for x_0 in data_batch])
-    
+    return np.mean([np.linalg.norm(x - x_0) ** 4 for x_0 in data_batch])
+
 
 def gradient(x, data_batch):
-    return 4 * np.mean([(x - x_0) ** 3 for x_0 in data_batch])
+    grad = 4 * np.mean([np.linalg.norm(x - x_0) ** 2 * (x - x_0) for x_0 in data_batch], axis=0)
+    return grad
 
 
 def hessian(x, data_batch):
-    return 12 * np.mean([(x - x_0) ** 2 for x_0 in data_batch])
+    if type(x) != np.ndarray:
+        x = np.array([x])
+    elif len(x.shape) == 1:
+        x = x.reshape(-1, 1)
+    I = np.identity(len(x))
+    hess = 4 * np.mean([(x - x_0) @ (x - x_0).T + np.linalg.norm(x - x_0) ** 2 * I for x_0 in data_batch], axis=0)
+    return hess
 
 
-def optimal_value(data):
+def optimal_value(data, x_0=None):
     step_size = 1
 
-    x0 = 1000
-    x = x0
-    N = 20
+    if x_0 is None:
+        x_0 = np.array([1.] * data.shape[1])
+    x = x_0
+    N = 100
     for i in range(N):
         grad = gradient(x, data)
         hess = hessian(x, data)
-        x -= step_size * 1 / hess * grad
+        x -= step_size * np.linalg.inv(hess) @ grad
         f_value = value(x, data)
-
     x_opt = x
     f_opt = f_value
     return x_opt, f_opt
 
-
 def calculate_clipped_lr(c_0, c_1, g_p):
-    return 1 / (c_0 + c_1 * abs(g_p))
+    return 1 / (c_0 + c_1 * np.linalg.norm(g_p))
 
 
 def clip(vector, clip_level):
     return vector * min(1, clip_level / np.linalg.norm(vector))
 
-    
+
 def l0l1_gd(
     x_0, 
-    f_opt,
     data, 
     n_comms,
     n_seeds,
     c_0,
     c_1,
+    f_opt=None,
 ):
-    results_dir = f'results/fl_fourth_order/x_0_{x_0}/gd'
+    dim = len(x_0)
+    results_dir = f'results/fl_fourth_order/dim_{dim}/x_0_{x_0[0]}/gd'
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
     result_fn = f'gd_c_0_{c_0}_c_1_{c_1}_{n_comms}'
@@ -84,17 +92,17 @@ def l0l1_gd(
     # print(f'Comm [{0}/{n_comms}] f-f_opt={value(x_p, data) - f_opt:.4f}')
 
     for seed in range(n_seeds):
-        x_p = x_0
+        x_p = deepcopy(x_0)
         np.random.seed(seed)
         loss_vals_list = [0.0 for _ in range(n_comms + 1)]
-        loss_vals_list[0] = abs(value(x_0, data) - f_opt)
+        loss_vals_list[0] = value(x_0, data) - f_opt if f_opt is not None else value(x_0, data)
         seed_loss_vals[seed] = loss_vals_list
 
         for p in range(n_comms):
             g_p = gradient(x_p, data)
             server_lr = calculate_clipped_lr(c_0, c_1, g_p)
             x_p -= server_lr * g_p
-            f_val = abs(value(x_p, data) - f_opt)
+            f_val = value(x_p, data) - f_opt if f_opt is not None else value(x_p, data)
             if np.isnan(f_val):
                 print(f'Divergence of l0l1_gd with c_0={c_0}, c_1={c_1}')
                 return
@@ -108,7 +116,6 @@ def l0l1_gd(
 
 def local_sgd_jump(
     x_0, 
-    f_opt,
     data, 
     batch_size, 
     n_clients, 
@@ -118,9 +125,11 @@ def local_sgd_jump(
     client_lr, 
     c_0,
     c_1,
-    samp_ret=True
+    samp_ret=True,
+    f_opt=None
 ):
-    results_dir = f'results/fl_fourth_order/x_0_{x_0}/tau_{n_local_steps}/bs_{batch_size}'
+    dim = len(x_0)
+    results_dir = f"results/fl_fourth_order/dim_{dim}/x_0_{x_0[0]}/tau_{n_local_steps}/bs_{batch_size}"
     if not samp_ret:
         results_dir += '_no_ret'
     if not os.path.exists(results_dir):
@@ -140,10 +149,10 @@ def local_sgd_jump(
     # print(f'Client data lens: {[len(d) for d in client_data_list]}')
 
     for seed in range(n_seeds):
-        x_p = x_0
+        x_p = deepcopy(x_0)
         np.random.seed(seed)
         loss_vals_list = [0.0 for _ in range(n_comms + 1)]
-        loss_vals_list[0] = abs(value(x_0, data) - f_opt)
+        loss_vals_list[0] = value(x_0, data) - f_opt if f_opt is not None else value(x_0, data)
         seed_loss_vals[seed] = loss_vals_list
 
         for p in range(n_comms):
@@ -151,11 +160,12 @@ def local_sgd_jump(
 
             for m in range(n_clients):
                 # local run
-                x_p_m = x_p
+                x_p_m = deepcopy(x_p)
                 client_data = client_data_list[m]
 
                 for i in range(n_local_steps):
-                    input_batch = np.random.choice(client_data, batch_size, replace=samp_ret)
+                    batch_idx = np.random.choice(len(client_data), batch_size, replace=samp_ret)
+                    input_batch = client_data[batch_idx]
                     stoch_grad = gradient(x_p_m, input_batch)
                     if np.isnan(stoch_grad):
                         print(f'Divergence of local_sgd_jump with client_lr={client_lr}, c_0={c_0}, c_1={c_1} on p={p}, m={m}, i={i}')
@@ -167,7 +177,7 @@ def local_sgd_jump(
             g_p *= 1 / (client_lr * n_clients * n_local_steps)
             server_lr = calculate_clipped_lr(c_0, c_1, g_p)
             x_p -= server_lr * g_p
-            f_val = abs(value(x_p, data) - f_opt)
+            f_val = value(x_p, data) - f_opt if f_opt is not None else value(x_p, data)
             if np.isnan(f_val):
                 print(f'Divergence of local_sgd_jump with client_lr={client_lr}, c_0={c_0}, c_1={c_1}')
                 return
@@ -181,7 +191,6 @@ def local_sgd_jump(
 
 def local_clip_sgd(
     x_0, 
-    f_opt,
     data, 
     batch_size, 
     n_clients, 
@@ -190,9 +199,11 @@ def local_clip_sgd(
     n_seeds,
     c_0,
     c_1,
-    samp_ret=True
+    samp_ret=True,
+    f_opt=None,
 ):
-    results_dir = f'results/fl_fourth_order/x_0_{x_0}/tau_{n_local_steps}/bs_{batch_size}'
+    dim = len(x_0)
+    results_dir = f'results/fl_fourth_order/dim_{dim}/x_0_{x_0[0]}/tau_{n_local_steps}/bs_{batch_size}'
     if not samp_ret:
         results_dir += '_no_ret'
     if not os.path.exists(results_dir):
@@ -213,21 +224,22 @@ def local_clip_sgd(
     # print(f'Comm [{0}/{n_comms}] f-f_opt={value(x_p, data) - f_opt:.4f}')
 
     for seed in range(n_seeds):
-        x_p = x_0
+        x_p = deepcopy(x_0)
         np.random.seed(seed)
         loss_vals_list = [0.0 for _ in range(n_comms + 1)]
-        loss_vals_list[0] = abs(value(x_0, data) - f_opt)
+        loss_vals_list[0] = value(x_0, data) - f_opt if f_opt is not None else value(x_0, data)
         seed_loss_vals[seed] = loss_vals_list
         for p in range(n_comms):
             x_p_m_sum = 0
 
             for m in range(n_clients):
-                x_p_m = x_p
+                x_p_m = deepcopy(x_p)
                 # local run
                 client_data = client_data_list[m]
 
                 for i in range(n_local_steps):
-                    input_batch = np.random.choice(client_data, batch_size, replace=samp_ret)
+                    batch_idx = np.random.choice(len(client_data), batch_size, replace=samp_ret)
+                    input_batch = client_data[batch_idx]
                     stoch_grad = gradient(x_p_m, input_batch)
                     client_lr = calculate_clipped_lr(c_0, c_1, stoch_grad)
                     x_p_m -= client_lr * stoch_grad
@@ -235,16 +247,15 @@ def local_clip_sgd(
                 x_p_m_sum += x_p_m
 
             x_p = x_p_m_sum / n_clients
-            loss_vals_list[p + 1] = abs(value(x_p, data) - f_opt)
+            loss_vals_list[p + 1] = value(x_p, data) - f_opt if f_opt is not None else value(x_p, data)
             # print(f'Seed [{seed+1}/{n_seeds}] | Comm [{p+1}/{n_comms}] | f-f_opt={value(x_p, data) - f_opt:.4f}')
         # print()
 
     store_result(seed_loss_vals, result_path)
 
-    
+
 def clip_fedavg(
     x_0, 
-    f_opt,
     data, 
     batch_size, 
     n_clients, 
@@ -254,9 +265,11 @@ def clip_fedavg(
     server_lr,
     client_lr,
     client_cl,
-    samp_ret=True
+    samp_ret=True,
+    f_opt=None,
 ):
-    results_dir = f'results/fl_fourth_order/x_0_{x_0}/tau_{n_local_steps}/bs_{batch_size}'
+    dim = len(x_0)
+    results_dir = f'results/fl_fourth_order/dim_{dim}/x_0_{x_0[0]}/tau_{n_local_steps}/bs_{batch_size}'
     if not samp_ret:
         results_dir += '_no_ret'
     if not os.path.exists(results_dir):
@@ -277,21 +290,22 @@ def clip_fedavg(
     # print(f'Comm [{0}/{n_comms}] f-f_opt={value(x_p, data) - f_opt:.4f}')
 
     for seed in range(n_seeds):
-        x_p = x_0
+        x_p = deepcopy(x_0)
         np.random.seed(seed)
         loss_vals_list = [0.0 for _ in range(n_comms + 1)]
-        loss_vals_list[0] = abs(value(x_0, data) - f_opt)
+        loss_vals_list[0] = value(x_0, data) - f_opt if f_opt is not None else value(x_0, data)
         seed_loss_vals[seed] = loss_vals_list
         for p in range(n_comms):
             g_p = 0
 
             for m in range(n_clients):
                 # local run
-                x_p_m = x_p
+                x_p_m = deepcopy(x_p)
                 client_data = client_data_list[m]
 
                 for i in range(n_local_steps):
-                    input_batch = np.random.choice(client_data, batch_size, replace=samp_ret)
+                    batch_idx = np.random.choice(len(client_data), batch_size, replace=samp_ret)
+                    input_batch = client_data[batch_idx]
                     stoch_grad = gradient(x_p_m, input_batch)
                     if np.isnan(stoch_grad):
                         print(f'Divergence of clip_fedavg with client_lr={client_lr}, server_lr={server_lr}, client_cl={client_cl}')
@@ -304,7 +318,7 @@ def clip_fedavg(
 
             g_p /= n_clients
             x_p -= server_lr * g_p
-            f_val = abs(value(x_p, data) - f_opt)
+            f_val = value(x_p, data) - f_opt if f_opt is not None else value(x_p, data)
             if np.isnan(f_val):
                 print(f'Divergence of local_sgd_jump with client_lr={client_lr}, server_lr={server_lr}, client_cl={client_cl}')
                 return
@@ -315,12 +329,12 @@ def clip_fedavg(
 
     store_result(seed_loss_vals, result_path)
 
-    
-    
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('alg', type=str)
     parser.add_argument('--x_0', type=float, default=100., help='starting point')
+    parser.add_argument('--dim', type=int, default=1)
     parser.add_argument('--n_comms', type=int, default=100)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--tau', type=int, default=10, help='number of client steps')
@@ -338,10 +352,41 @@ if __name__ == '__main__':
     parser.add_argument('--n_cpus', type=int, default=1, help='number of processes to run in parallel')
     args = parser.parse_args()
     
-    data = generate_data()
-    x_opt, f_opt = optimal_value(data)
+    dim = args.dim
+    data = generate_data(dim)
+    if dim == 100:
+        x_opt = np.array([ 1.32804347e-01,  7.19779503e-02,  7.04943093e-02, -2.35329944e-02,
+            -1.95516040e-02,  6.97041573e-02,  9.54318891e-02, -1.39857618e-01,
+            1.19199691e-01, -2.80333338e-01, -2.85945954e-01,  2.22332861e-01,
+            -2.57966120e-01,  2.16270499e-01, -1.11499154e-01, -2.72959267e-01,
+            -9.24334643e-02, -8.27966187e-02, -1.47211408e-02,  6.83280872e-02,
+            8.78910780e-02,  1.97250009e-01, -1.45508698e-01,  7.23491786e-02,
+            -1.82284038e-01,  2.44315735e-04,  2.44724827e-01,  3.82992163e-01,
+            4.76409869e-02,  2.54656950e-01, -6.58300206e-02, -2.31525070e-01,
+            -2.05032336e-01,  2.47100979e-01, -2.87961897e-01, -1.03248497e-01,
+            4.15517838e-02,  1.82231867e-01,  1.53495490e-01, -2.60749655e-01,
+            -5.18513416e-02,  1.53014422e-02,  1.03189800e-01, -1.01744079e-01,
+            -5.36618251e-02, -5.85754884e-02, -9.43057536e-02,  3.30387302e-02,
+            6.99632753e-02,  2.05585832e-01,  1.48268426e-01,  3.62302587e-02,
+            4.65611472e-02, -2.34353921e-01,  9.19177712e-03, -5.85682495e-02,
+            -1.20143474e-01,  1.29189300e-02,  4.81295294e-02,  2.09324017e-01,
+            1.02536662e-01, -3.18210148e-01, -3.33340816e-01,  7.38168822e-02,
+            1.28026769e-01, -1.57418023e-01, -9.12967450e-02,  1.50610346e-01,
+            2.61618158e-01,  2.68815687e-01,  2.35708630e-01, -1.70302229e-01,
+            6.12227761e-03,  1.15496709e-01, -1.23951525e-01,  1.76146241e-01,
+            7.50914447e-02,  8.20005985e-02, -1.72888138e-01,  2.91149016e-01,
+            2.43421035e-02, -1.41566840e-01, -2.89859086e-01, -2.09393783e-01,
+            -7.56557208e-02, -6.38320049e-02, -1.06474899e-01, -3.06873268e-01,
+            -3.05879453e-01, -1.23315772e-01,  2.23982482e-01, -3.66526620e-01,
+            -1.14961182e-01, -3.27372061e-02,  1.63485703e-01,  3.36190063e-02,
+            -8.84683302e-02,  3.48391898e-01,  3.09775154e-01, -8.32125193e-02])
+        f_opt = value(x_opt, data)
+    elif dim == 1:
+        x_opt, f_opt = optimal_value(data)
+    else:
+        f_opt = None
     
-    x_0 = args.x_0
+    x_0 = np.ones(dim, dtype=float) * args.x_0
     n_local_steps = args.tau
     batch_size = args.batch_size
     n_comms = args.n_comms
@@ -368,14 +413,14 @@ if __name__ == '__main__':
         partial_run = partial(
             local_sgd_jump,
             x_0,
-            f_opt,
             data,
             batch_size,
             n_clients,
             n_local_steps,
             n_comms,
             n_seeds,
-            samp_ret=sample_no_return
+            samp_ret=sample_no_return,
+            f_opt=f_opt,
         )
         args_product = product(client_lr_list, c_0_list, c_1_list)
         if n_cpus > 1:
@@ -398,10 +443,10 @@ if __name__ == '__main__':
         partial_run = partial(
             l0l1_gd,
             x_0,
-            f_opt,
             data, 
             n_comms,
-            n_seeds
+            n_seeds,
+            f_opt=f_opt,
         )
         args_product = product(c_0_list, c_1_list)
         if n_cpus > 1:
@@ -424,14 +469,14 @@ if __name__ == '__main__':
         partial_run = partial(
             local_clip_sgd,
             x_0,
-            f_opt,
             data,
             batch_size,
             n_clients,
             n_local_steps,
             n_comms,
             n_seeds,
-            samp_ret=sample_no_return
+            samp_ret=sample_no_return,
+            f_opt=f_opt,
         )
         args_product = product(c_0_list, c_1_list)
         if n_cpus > 1:
@@ -458,14 +503,14 @@ if __name__ == '__main__':
         partial_run = partial(
             clip_fedavg,
             x_0,
-            f_opt,
             data,
             batch_size,
             n_clients,
             n_local_steps,
             n_comms,
             n_seeds,
-            samp_ret=sample_no_return
+            samp_ret=sample_no_return,
+            f_opt=f_opt,
         )
         args_product = product(server_lr_list, client_lr_list, client_clip_level_list)
         if n_cpus > 1:
