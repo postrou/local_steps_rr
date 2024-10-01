@@ -15,7 +15,7 @@ from src.loss_functions import load_quadratic_dataset, load_logreg_dataset, \
     load_fourth_order_dataset
 from src.optimizers import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
-        ClippedShufflingMean, ClippedShufflingSAGA, ClERR, ClERR2
+        ClippedShufflingMean, ClippedShufflingSAGA, ClERR, ClERR2, NASTYA
 from src.utils import get_trace, relative_round
 
 
@@ -599,6 +599,49 @@ def cig_opt(
         print(f'best step size: {cig_opt_trace.step_size}')
         cig_opt_trace.save(f'c_{clip_level}_ig_opt_{n_epochs}', trace_path)
 
+        
+def nastya(
+    loss,
+    x0, 
+    n_epochs, 
+    stoch_it, 
+    n_seeds, 
+    trace_len, 
+    trace_path, 
+    batch_size, 
+    step_size,
+    inner_step_size,
+):
+    trace_name = f'nastya_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
+    nastya_trace = get_trace(
+        os.path.join(trace_path, trace_name), 
+        loss
+    )
+    if not nastya_trace:
+        nastya = NASTYA(
+            inner_step_size=inner_step_size,
+            lr0=step_size,
+            loss=loss, 
+            it_max=stoch_it, 
+            batch_size=batch_size, 
+            trace_len=trace_len,
+            n_seeds=n_seeds, 
+        )
+        try:
+            nastya_trace = nastya.run(x0=x0)
+        except AssertionError:
+            print(f'NASTYA, some error, skipping lr={step_size}, inner_lr={inner_step_size}')
+            return
+        nastya_trace.convert_its_to_epochs(batch_size=batch_size)
+        nastya_trace.compute_loss_of_iterates()
+        nastya_trace.save(
+            trace_name,
+            trace_path
+        )
+        print(f'🥰🥰🥰 Finished NASTYA trace with lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
+    else:
+        print(f'🤙🤙🤙 NASTYA trace with lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
+
 
 def clerr(
     loss,
@@ -617,14 +660,14 @@ def clerr(
 ):
     if use_g:
         if use_first_type:
-            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_g_{n_epochs}'
+            trace_name = f'clerr_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
         else:
-            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_2_g_{n_epochs}'
+            trace_name = f'clerr_2_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
     else:
         if use_first_type:
-            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_{n_epochs}'
+            trace_name = f'clerr_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
         else:
-            trace_name = f'c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_clerr_2_{n_epochs}'
+            trace_name = f'clerr_2_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
     clerr_trace = get_trace(
         os.path.join(trace_path, trace_name), 
         loss
@@ -1148,14 +1191,45 @@ if __name__ == '__main__':
             step_size_list,
         )
         pool.map(partial_cig_opt, clip_level_list)
+        
+    elif alg == 'nastya':
+        assert args.in_lr_min is not None and args.in_lr_max is not None, \
+            f'You did not provide --in_lr_min or --in_lr_max for algorithm {alg}'
+        assert args.lr_min is not None and args.lr_max is not None, \
+            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+        
+        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+        in_step_size_list = np.logspace(args.in_lr_min, args.in_lr_max, args.in_lr_max - args.in_lr_min + 1)
+
+        args_product = list(product(step_size_list, in_step_size_list))
+        pool = Pool(min(len(args_product), args.n_cpus))
+        print('step sizes:', step_size_list)
+        print('inner step sizes:', in_step_size_list)
+
+        partial_nastya = partial(
+            nastya,
+            loss,
+            x0,
+            n_epochs,
+            stoch_it,
+            n_seeds,
+            trace_len,
+            trace_path,
+            batch_size,
+        )
+        if args.n_cpus == 1:
+            for lr, in_lr in args_product:
+                partial_nastya(lr, in_lr)
+        else:
+            pool.starmap(partial_nastya, args_product)
 
     elif alg == 'clerr' or alg == 'clerr_2':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
         assert args.lr_min is not None and args.lr_max is not None, \
             f'You did not provide --lr_min or --lr_max for algorithm {alg}'
-        assert args.lr_min is not None and args.lr_max is not None, \
-            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+        assert args.in_lr_min is not None and args.in_lr_max is not None, \
+            f'You did not provide --in_lr_min or --in_lr_max for algorithm {alg}'
 
         if alg == 'clerr':
             print('CLERR with g' if args.use_g else 'CLERR')
