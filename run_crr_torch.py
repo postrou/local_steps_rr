@@ -463,7 +463,7 @@ def train_shuffling(
                     device,
                 )
 
-            if type(optimizer) in [ClERR, NASTYA]:
+            if type(optimizer) in [ClERR, NASTYA, ClERRHeuristic]:
                 optimizer.outer_step(x_start_epoch)
                 optimizer.init_g()
 
