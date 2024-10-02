@@ -37,6 +37,7 @@ class ClERR(Shuffling):
 
     def init_run(self, *args, **kwargs):
         super().init_run(*args, **kwargs)
+        self.x_start_epoch = self.x.copy()
         self.i = 0
         self.trace.outer_step_sizes = [self.outer_step_size]
     
@@ -81,11 +82,11 @@ class ClERR(Shuffling):
     def perform_outer_step(self):
         self.outer_step_size = self.calculate_outer_step_size()
 
-        # print(self.it, outer_step_size, self.x, self.grad_estimator)
-        self.x -= self.outer_step_size * self.grad_estimator
+        self.x = self.x_start_epoch - self.outer_step_size * self.grad_estimator
         if not self.use_g_in_outer_step:
             self.update_norm_grad_start_epoch()
         self.grad_estimator = np.zeros_like(self.x)
+        self.x_start_epoch = self.x.copy()
 
     def calculate_outer_step_size(self):
         """Calculating outer step size
@@ -144,12 +145,6 @@ class ClERR2(ClERR):
         self.clip_level = c_0 / c_1
         self.lr = 1 / (2 * c_0)
    
-    def perform_outer_step(self):
-        self.outer_step_size = self.calculate_outer_step_size()
-        if not self.use_g_in_outer_step:
-            self.update_norm_grad_start_epoch()
-        self.x -= self.lr * self.outer_step_size * self.grad_estimator
-
     def calculate_outer_step_size(self):
         """Calculating outer step size.
         Here outer_step_size behaves like clipping.
@@ -164,4 +159,4 @@ class ClERR2(ClERR):
         else:
             outer_step_size = \
                 min(1, self.clip_level / self.norm_grad_start_epoch)
-        return outer_step_size
+        return self.lr * outer_step_size
