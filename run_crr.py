@@ -654,13 +654,18 @@ def clerr(
     batch_size, 
     use_first_type,
     use_g,
-    clip_level,
-    step_size,
-    inner_step_size
+    inner_step_size,
+    clip_level=None,
+    step_size=None,
+    c_0=None,
+    c_1=None
 ):
     if use_g:
         if use_first_type:
-            trace_name = f'clerr_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
+            if c_0 is None and c_1 is None:
+                trace_name = f'clerr_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
+            else:
+                trace_name = f'clerr_g_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_step_size}_{n_epochs}'
         else:
             trace_name = f'clerr_2_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
     else:
@@ -673,8 +678,9 @@ def clerr(
         loss
     )
     if not clerr_trace:
-        c_0 = 1 / (2 * step_size)
-        c_1 = c_0 / clip_level
+        if c_0 is None and c_1 is None:
+            c_0 = 1 / (2 * step_size)
+            c_1 = c_0 / clip_level
         ClerrClass = ClERR if use_first_type else ClERR2
         clerr = ClerrClass(
             c_0=c_0,
@@ -692,7 +698,10 @@ def clerr(
             clerr_trace = clerr.run(x0=x0)
         except AssertionError:
             if use_first_type:
-                print(f'CLERR, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
+                if c_0 is None and c_1 is None:
+                    print(f'CLERR, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
+                else:
+                    print(f'CLERR, some error, skipping c_0={c_0}, c_1={c_1}, inner_lr={inner_step_size}')
             else:
                 print(f'CLERR-2, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
             return
@@ -703,12 +712,18 @@ def clerr(
             trace_path
         )
         if use_first_type:
-            print(f'🥰🥰🥰 Finished CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
+            if c_0 is None and c_1 is None:
+                print(f'🥰🥰🥰 Finished CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
+            else:
+                print(f'🥰🥰🥰 Finished CLERR trace with c_0={c_0}, c_1={c_1}, inner_lr={inner_step_size}! 🥰🥰🥰')
         else:
             print(f'🥰🥰🥰 Finished CLERR-2 trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
     else:
         if use_first_type:
-            print(f'🤙🤙🤙 CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
+            if c_0 is None and c_1 is None:
+                print(f'🤙🤙🤙 CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
+            else:
+                print(f'🤙🤙🤙 CLERR trace with c_0={c_0}, lr={c_1}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
         else:
             print(f'🤙🤙🤙 CLERR-2 trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
 
@@ -724,8 +739,12 @@ if __name__ == '__main__':
     parser.add_argument('--cl_max', type=int, default=None, help='max clip level in log scale')
     parser.add_argument('--lr_min', type=int, default=None, help='min step size in log scale')
     parser.add_argument('--lr_max', type=int, default=None, help='max step size in log scale')
-    parser.add_argument('--in_lr_min', type=int, default=None, help='min inner step size in log scale (for CLERR)')
-    parser.add_argument('--in_lr_max', type=int, default=None, help='max inner step size in log scale (for CLERR)')
+    parser.add_argument('--in_lr_min', type=int, default=None, help='min inner step size in log scale (for CLERR and Nastya)')
+    parser.add_argument('--in_lr_max', type=int, default=None, help='max inner step size in log scale (for CLERR and Nastya)')
+    parser.add_argument('--c_0_min', type=int, default=None, help='min c_0 in log scale')
+    parser.add_argument('--c_0_max', type=int, default=None, help='max c_0 in log scale')
+    parser.add_argument('--c_1_min', type=int, default=None, help='min c_1 in log scale')
+    parser.add_argument('--c_1_max', type=int, default=None, help='max c_1 in log scale')
     parser.add_argument('--a_min', type=int, default=None, help='min alpha in log scale (for shifts)')
     parser.add_argument('--a_max', type=int, default=None, help='max alpha in log scale (for shifts)')
     parser.add_argument('--use_g', action='store_true')
@@ -1224,10 +1243,10 @@ if __name__ == '__main__':
             pool.starmap(partial_nastya, args_product)
 
     elif alg == 'clerr' or alg == 'clerr_2':
-        assert args.cl_min is not None and args.cl_max is not None, \
-            f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is not None and args.lr_max is not None, \
-            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
+        # assert args.cl_min is not None and args.cl_max is not None, \
+            # f'You did not provide --cl_min or --cl_max for algorithm {alg}'
+        # assert args.lr_min is not None and args.lr_max is not None, \
+            # f'You did not provide --lr_min or --lr_max for algorithm {alg}'
         assert args.in_lr_min is not None and args.in_lr_max is not None, \
             f'You did not provide --in_lr_min or --in_lr_max for algorithm {alg}'
 
@@ -1236,35 +1255,69 @@ if __name__ == '__main__':
         else:
             print("CLERR-2 with g" if args.use_g else "CLERR-2")
 
-        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+        c_0_min, c_0_max = args.c_0_min, args.c_0_max
+        c_1_min, c_1_max = args.c_1_min, args.c_1_max
         in_step_size_list = np.logspace(args.in_lr_min, args.in_lr_max, args.in_lr_max - args.in_lr_min + 1)
+        if c_0_min is None and c_0_min is None and c_1_min is None and c_1_max is None:
+            step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
+            clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
+            args_product = list(product(in_step_size_list, clip_level_list, step_size_list))
 
-        args_product = list(product(clip_level_list, step_size_list, in_step_size_list))
-        pool = Pool(min(len(args_product), args.n_cpus))
-        print('step sizes:', step_size_list)
-        print('clip levels:', clip_level_list)
-        print('inner step sizes:', in_step_size_list)
+            pool = Pool(min(len(args_product), args.n_cpus))
+            print('step sizes:', step_size_list)
+            print('clip levels:', clip_level_list)
+            print('inner step sizes:', in_step_size_list)
 
-        use_first_type = alg == 'clerr'
-        partial_clerr = partial(
-            clerr,
-            loss,
-            x0,
-            n_epochs,
-            stoch_it,
-            n_seeds,
-            trace_len,
-            trace_path,
-            batch_size,
-            use_first_type,
-            args.use_g,
-        )
-        if args.n_cpus == 1:
-            for cl, lr, in_lr in args_product:
-                partial_clerr(cl, lr, in_lr)
+            use_first_type = alg == 'clerr'
+            partial_clerr = partial(
+                clerr,
+                loss,
+                x0,
+                n_epochs,
+                stoch_it,
+                n_seeds,
+                trace_len,
+                trace_path,
+                batch_size,
+                use_first_type,
+                args.use_g,
+            )
+            if args.n_cpus == 1:
+                for in_lr, cl, lr in args_product:
+                    partial_clerr(in_lr, cl, lr)
+            else:
+                pool.starmap(partial_clerr, args_product)
         else:
-            pool.starmap(partial_clerr, args_product)
+            c_0_list = np.logspace(c_0_min, c_0_max, c_0_max - c_0_min + 1)
+            c_1_list = np.logspace(c_1_min, c_1_max, c_1_max - c_1_min + 1)
+            step_size_list = [None]
+            clip_level_list = [None]
+            args_product = list(product(in_step_size_list, step_size_list, clip_level_list, c_0_list, c_1_list))
+
+            pool = Pool(min(len(args_product), args.n_cpus))
+            print('c_0:', c_0_list)
+            print('c_1:', c_1_list)
+            print('inner step sizes:', in_step_size_list)
+
+            use_first_type = alg == 'clerr'
+            partial_clerr = partial(
+                clerr,
+                loss,
+                x0,
+                n_epochs,
+                stoch_it,
+                n_seeds,
+                trace_len,
+                trace_path,
+                batch_size,
+                use_first_type,
+                args.use_g,
+            )
+            if args.n_cpus == 1:
+                for in_lr, cl, lr, c_0, c_1 in args_product:
+                    partial_clerr(in_lr, cl, lr, c_0, c_1)
+            else:
+                pool.starmap(partial_clerr, args_product)
 
     else:
         raise NotImplementedError(f'Unknown algorithm: {alg}')
