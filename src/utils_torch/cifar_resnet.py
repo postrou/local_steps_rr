@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
@@ -7,7 +8,7 @@ from src.optimizers_torch import ShuffleOnceSampler, ClERR, NASTYA
 from src.loss_functions.models import ResNet18
 
 
-def cifar_load_data(path, batch_size):
+def cifar_load_data(path, batch_size, add_het=False):
     print("Preparing data..")
     transform_train = transforms.Compose(
         [
@@ -26,8 +27,11 @@ def cifar_load_data(path, batch_size):
     )
 
     train_data = torchvision.datasets.CIFAR10(
-        root=path, train=True, download=True, transform=transform_train
+        root=path, train=True, download=True
     )
+    if add_het:
+        cifar_add_heterogeneity(train_data)
+    train_data.transform = transform_train
     train_sampler = ShuffleOnceSampler(train_data)
     train_loader = torch.utils.data.DataLoader(
         train_data, batch_size=batch_size, sampler=train_sampler, num_workers=4, pin_memory=True
@@ -43,6 +47,34 @@ def cifar_load_data(path, batch_size):
     return train_loader, test_loader
 
 
+def cifar_add_heterogeneity(train_data):
+    print('Adding heterogeneity...')
+    train_data_per_class = {i: [] for i in range(10)}
+    for i, (im, cl) in enumerate(train_data):
+        train_data_per_class[cl].append(i)
+
+    val = 127
+    for cl in train_data_per_class:
+        cl_pic_idx = train_data_per_class[cl]
+        chosen_pic_idx = np.random.choice(cl_pic_idx, int(0.5 * len(cl_pic_idx)), replace=False)
+        for pic_id in chosen_pic_idx:
+            is_row = np.random.choice([True, False])
+            is_add = np.random.choice([True, False])
+            pic = train_data.data[pic_id]
+            if is_row:
+                row_idx = np.random.choice(range(pic.shape[1]), int(0.4 * pic.shape[1]), replace=False)
+                if is_add:
+                    pic[row_idx, :, :] = np.minimum(pic[row_idx, :, :] + val, 255)
+                else:
+                    pic[row_idx, :, :] = np.maximum(pic[row_idx, :, :] - val, 0)
+            else:
+                col_idx = np.random.choice(range(pic.shape[2]), int(0.4 * pic.shape[2]), replace=False)
+                if is_add:
+                    pic[:, col_idx, :] = np.minimum(pic[:, col_idx, :] + val, 255)
+                else:
+                    pic[:, col_idx, :] = np.maximum(pic[:, col_idx, :] - val, 0)
+        
+
 def build_resnet_model(device):
     model = ResNet18().to(device)
     criterion = nn.CrossEntropyLoss()
@@ -55,6 +87,7 @@ def cifar_predict_and_loss(inputs, targets, model, criterion):
         _, predicted = outputs.max(1)
         loss = criterion(outputs, targets)
     return predicted, loss
+
 
 def cifar_epoch_result(train_loader, test_loader, model, criterion, device):
     model.eval()

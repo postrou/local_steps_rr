@@ -193,8 +193,8 @@ def print_train_test_results(
             train_str = f"💪💪💪 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
             test_str = f"🧪🧪🧪 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
         else:
-            train_str = f"💪💪💪 ClERR-heuristic | c_0={cl} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
-            test_str = f"🧪🧪🧪 ClERR-heuristic | c_0={cl} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+            train_str = f"💪💪💪 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+            test_str = f"🧪🧪🧪 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
 
     if train_acc is not None and test_acc is not None:
         train_str += f" | Train acc={train_acc:.4f}"
@@ -206,6 +206,7 @@ def print_train_test_results(
 def train_shuffling(
     test,
     task,
+    add_het,
     alg,
     n_seeds,
     n_epochs,
@@ -244,7 +245,8 @@ def train_shuffling(
         log_path = os.path.join(log_dir, log_fn)
         redirect_output(log_path)
 
-    results_dir = f"results/{task}/bs_{batch_size}"
+    task_dir = task + "_het" if add_het else ""
+    results_dir = f"results/{task_dir}/bs_{batch_size}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
     if alg == "so":
@@ -269,7 +271,7 @@ def train_shuffling(
             )
             results_fn = f"clerr_heuristic_c_{cl}_lr_{lr}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
         else:
-            print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}")
+            print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}, inner_cl={inner_cl}")
             results_fn = f"clerr_heuristic_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
     results_path = os.path.join(results_dir, results_fn)
     if os.path.exists(results_path):
@@ -307,7 +309,7 @@ def train_shuffling(
     device = "cuda"
     if train_loader is None or test_loader is None:
         if task == "cifar10":
-            train_loader, test_loader = cifar_load_data("data/cifar10/", batch_size)
+            train_loader, test_loader = cifar_load_data("data/cifar10/", batch_size, add_het)
         elif task == "penn":
             n_tokens, train_loader, test_loader = penn_load_data(
                 "data/penn/", batch_size
@@ -522,11 +524,11 @@ def train_shuffling(
         elif alg == "clerr_heuristic":
             if c_0 is None and c_1 is None:
                 print(
-                    f"🌱🌱🌱 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={cl} | Seed {seed + 1}/{n_seeds} finished!"
+                    f"🌱🌱🌱 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed + 1}/{n_seeds} finished!"
                 )
             else:
                 print(
-                    f"🌱🌱🌱 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={cl} | Seed {seed + 1}/{n_seeds} finished!"
+                    f"🌱🌱🌱 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed + 1}/{n_seeds} finished!"
                 )
         store_seed_results(
             seed,
@@ -634,6 +636,10 @@ def get_argparse_args():
         help="max constant c_1 in log scale, used in calculation of outer step size in ClERR and ClERR-Heuristic (now implemented only for ClERR-Heuristic)",
     )
     parser.add_argument(
+        '--add_het',
+        action='store_true'
+    )
+    parser.add_argument(
         "--n_cpus", type=int, default=1, help="number of processes to run in parallel"
     )
     parser.add_argument(
@@ -684,11 +690,11 @@ if __name__ == "__main__":
             and args.in_lr_max is not None
             and args.in_lr_min == args.in_lr_max
         ), "For clerr_heuristic we fix inner learning rate, which is equal to the best learning rate of cso"
-        in_step_size = [10**args.in_lr_min]
+        in_step_size = [float(10**args.in_lr_min)]
         assert (
             args.in_cl is not None
         ), "You did not provide --in_cl for algorithm clerr_heuristic!"
-        in_clip_level = [10**args.in_cl]
+        in_clip_level = [float(10**args.in_cl)]
 
         assert (
             args.lr_min is not None
@@ -730,7 +736,7 @@ if __name__ == "__main__":
     n_epochs = args.n_epochs
     n_seeds = 3
     partial_train = partial(
-        train_shuffling, args.test, task, alg, n_seeds, n_epochs, batch_size
+        train_shuffling, args.test, task, args.add_het, alg, n_seeds, n_epochs, batch_size
     )
     if alg == "so":
         if args.n_cpus == 1:
