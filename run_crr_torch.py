@@ -36,19 +36,19 @@ def compute_and_store_epoch_results(
     test_loss_vals,
     test_gns,
     test_acc_vals,
-    train_loader,
-    test_loader,
+    train_data,
+    test_data,
     model,
     criterion,
     device,
 ):
     if task == "cifar10":
         train_loss, train_acc, train_gn, test_loss, test_acc, test_gn = (
-            cifar_epoch_result(train_loader, test_loader, model, criterion, device)
+            cifar_epoch_result(train_data, test_data, model, criterion, device)
         )
     elif task == "penn":
         train_loss, train_gn, test_loss, test_gn = penn_epoch_result(
-            train_loader, test_loader, model, criterion, device
+            train_data, test_data, model, criterion, device
         )
     train_loss_vals[epoch + 1] = train_loss
     train_gns[epoch + 1] = train_gn
@@ -206,6 +206,7 @@ def print_train_test_results(
 def train_shuffling(
     test,
     task,
+    model_type,
     add_het,
     alg,
     n_seeds,
@@ -218,7 +219,7 @@ def train_shuffling(
     c_0=None,
     c_1=None,
     train_loader=None,
-    test_loader=None,
+    test_data=None,
 ):
     assert task in ["cifar10", "penn"], f"Task {task} is not implemented!"
     if not test:
@@ -245,8 +246,8 @@ def train_shuffling(
         log_path = os.path.join(log_dir, log_fn)
         redirect_output(log_path)
 
-    task_dir = task + "_het" if add_het else ""
-    results_dir = f"results/{task_dir}/bs_{batch_size}"
+    task_dir = task + "_het" if add_het else task
+    results_dir = f"results/{task_dir}/{model_type}/bs_{batch_size}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
     if alg == "so":
@@ -274,7 +275,7 @@ def train_shuffling(
             print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}, inner_cl={inner_cl}")
             results_fn = f"clerr_heuristic_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
     results_path = os.path.join(results_dir, results_fn)
-    if os.path.exists(results_path):
+    if os.path.exists(results_path) and not test:
         if alg == "so":
             print(
                 f"Results for so, run for {n_seeds} seeds, {n_epochs} epochs with lr={lr} already exist!"
@@ -307,11 +308,11 @@ def train_shuffling(
         return
 
     device = "cuda"
-    if train_loader is None or test_loader is None:
+    if train_loader is None or test_data is None:
         if task == "cifar10":
-            train_loader, test_loader = cifar_load_data("data/cifar10/", batch_size, add_het)
+            train_loader, train_data, test_data = cifar_load_data("data/cifar10/", batch_size, add_het)
         elif task == "penn":
-            n_tokens, train_loader, test_loader = penn_load_data(
+            n_tokens, train_loader, test_data = penn_load_data(
                 "data/penn/", batch_size
             )
 
@@ -338,8 +339,10 @@ def train_shuffling(
             test_acc_vals,
         ) = init_seed(seed, n_epochs)
 
-        if task == "cifar10":
+        if model_type == "resnet":
             model, criterion = build_resnet_model(device)
+        elif model_type == 'lenet':
+            model, criterion = build_lenet_model(device)
         elif task == "penn":
             model, criterion = build_lstm_model(n_tokens, device)
         model.train()
@@ -357,8 +360,8 @@ def train_shuffling(
             test_loss_vals,
             test_gns,
             test_acc_vals,
-            train_loader,
-            test_loader,
+            train_data,
+            test_data,
             model,
             criterion,
             device,
@@ -478,8 +481,8 @@ def train_shuffling(
                 test_loss_vals,
                 test_gns,
                 test_acc_vals,
-                train_loader,
-                test_loader,
+                train_data,
+                test_data,
                 model,
                 criterion,
                 device,
@@ -573,6 +576,7 @@ def get_argparse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("alg", type=str)
     parser.add_argument("task", type=str)
+    parser.add_argument("--model", type=str, default='resnet')
     parser.add_argument("--n_epochs", type=int, default=200)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument(
@@ -657,8 +661,10 @@ if __name__ == "__main__":
 
     alg = args.alg
     task = args.task
+    model_type = args.model
     assert alg in ["so", "cso", "nastya", "clerr", "clerr_heuristic"]
     assert task in ["cifar10", "penn"]
+    assert model_type in ['resnet', 'lenet', 'lstm']
 
     if alg != 'clerr_heuristic':
         assert (
@@ -736,7 +742,7 @@ if __name__ == "__main__":
     n_epochs = args.n_epochs
     n_seeds = 3
     partial_train = partial(
-        train_shuffling, args.test, task, args.add_het, alg, n_seeds, n_epochs, batch_size
+        train_shuffling, args.test, task, model_type, args.add_het, alg, n_seeds, n_epochs, batch_size
     )
     if alg == "so":
         if args.n_cpus == 1:
