@@ -1,2 +1,2 @@
-from .cifar_resnet import *
+from .cifar import *
 from .penn_lstm import *
