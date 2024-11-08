@@ -35,7 +35,7 @@ def cifar_load_data(path, batch_size, add_het=False):
     train_sampler = ShuffleOnceSampler(train_data)
     train_bs = min(batch_size, len(train_data))
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=train_bs, sampler=train_sampler, num_workers=1, pin_memory=True
+        train_data, batch_size=train_bs, sampler=train_sampler, num_workers=10, pin_memory=True
     )
     if train_bs == len(train_data):
         train_loader = [next(iter(train_loader))]
