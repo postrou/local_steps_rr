@@ -36,19 +36,19 @@ def compute_and_store_epoch_results(
     test_loss_vals,
     test_gns,
     test_acc_vals,
-    train_loader,
-    test_loader,
+    train_data,
+    test_data,
     model,
     criterion,
     device,
 ):
     if task == "cifar10":
         train_loss, train_acc, train_gn, test_loss, test_acc, test_gn = (
-            cifar_epoch_result(train_loader, test_loader, model, criterion, device)
+            cifar_epoch_result(train_data, test_data, model, criterion, device)
         )
     elif task == "penn":
         train_loss, train_gn, test_loss, test_gn = penn_epoch_result(
-            train_loader, test_loader, model, criterion, device
+            train_data, test_data, model, criterion, device
         )
     train_loss_vals[epoch + 1] = train_loss
     train_gns[epoch + 1] = train_gn
@@ -193,8 +193,8 @@ def print_train_test_results(
             train_str = f"💪💪💪 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
             test_str = f"🧪🧪🧪 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
         else:
-            train_str = f"💪💪💪 ClERR-heuristic | c_0={cl} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
-            test_str = f"🧪🧪🧪 ClERR-heuristic | c_0={cl} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
+            train_str = f"💪💪💪 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Train loss={train_loss:.4f} | Train gn={train_gn:.4f}"
+            test_str = f"🧪🧪🧪 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed}/{n_seeds} | Epoch {epoch}/{n_epochs} | Test loss={test_loss:.4f} | Test gn={test_gn:.4f}"
 
     if train_acc is not None and test_acc is not None:
         train_str += f" | Train acc={train_acc:.4f}"
@@ -206,6 +206,8 @@ def print_train_test_results(
 def train_shuffling(
     test,
     task,
+    model_type,
+    add_het,
     alg,
     n_seeds,
     n_epochs,
@@ -217,7 +219,7 @@ def train_shuffling(
     c_0=None,
     c_1=None,
     train_loader=None,
-    test_loader=None,
+    test_data=None,
 ):
     assert task in ["cifar10", "penn"], f"Task {task} is not implemented!"
     if not test:
@@ -244,7 +246,8 @@ def train_shuffling(
         log_path = os.path.join(log_dir, log_fn)
         redirect_output(log_path)
 
-    results_dir = f"results/{task}/bs_{batch_size}"
+    task_dir = task + "_het" if add_het else task
+    results_dir = f"results/{task_dir}/{model_type}/bs_{batch_size}"
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
     if alg == "so":
@@ -269,10 +272,10 @@ def train_shuffling(
             )
             results_fn = f"clerr_heuristic_c_{cl}_lr_{lr}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
         else:
-            print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}")
+            print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}, inner_cl={inner_cl}")
             results_fn = f"clerr_heuristic_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
     results_path = os.path.join(results_dir, results_fn)
-    if os.path.exists(results_path):
+    if os.path.exists(results_path) and not test:
         if alg == "so":
             print(
                 f"Results for so, run for {n_seeds} seeds, {n_epochs} epochs with lr={lr} already exist!"
@@ -305,11 +308,11 @@ def train_shuffling(
         return
 
     device = "cuda"
-    if train_loader is None or test_loader is None:
+    if train_loader is None or test_data is None:
         if task == "cifar10":
-            train_loader, test_loader = cifar_load_data("data/cifar10/", batch_size)
+            train_loader, train_data, test_data = cifar_load_data("data/cifar10/", batch_size, add_het)
         elif task == "penn":
-            n_tokens, train_loader, test_loader = penn_load_data(
+            n_tokens, train_loader, test_data = penn_load_data(
                 "data/penn/", batch_size
             )
 
@@ -336,8 +339,10 @@ def train_shuffling(
             test_acc_vals,
         ) = init_seed(seed, n_epochs)
 
-        if task == "cifar10":
+        if model_type == "resnet":
             model, criterion = build_resnet_model(device)
+        elif model_type == 'lenet':
+            model, criterion = build_lenet_model(device)
         elif task == "penn":
             model, criterion = build_lstm_model(n_tokens, device)
         model.train()
@@ -355,8 +360,8 @@ def train_shuffling(
             test_loss_vals,
             test_gns,
             test_acc_vals,
-            train_loader,
-            test_loader,
+            train_data,
+            test_data,
             model,
             criterion,
             device,
@@ -476,8 +481,8 @@ def train_shuffling(
                 test_loss_vals,
                 test_gns,
                 test_acc_vals,
-                train_loader,
-                test_loader,
+                train_data,
+                test_data,
                 model,
                 criterion,
                 device,
@@ -522,11 +527,11 @@ def train_shuffling(
         elif alg == "clerr_heuristic":
             if c_0 is None and c_1 is None:
                 print(
-                    f"🌱🌱🌱 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={cl} | Seed {seed + 1}/{n_seeds} finished!"
+                    f"🌱🌱🌱 ClERR-heuristic | CL={cl} | LR={lr} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed + 1}/{n_seeds} finished!"
                 )
             else:
                 print(
-                    f"🌱🌱🌱 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={cl} | Seed {seed + 1}/{n_seeds} finished!"
+                    f"🌱🌱🌱 ClERR-heuristic | c_0={c_0} | c_1={c_1} | Inner LR={inner_lr} | Inner CL={inner_cl} | Seed {seed + 1}/{n_seeds} finished!"
                 )
         store_seed_results(
             seed,
@@ -571,6 +576,7 @@ def get_argparse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("alg", type=str)
     parser.add_argument("task", type=str)
+    parser.add_argument("--model", type=str, default='resnet')
     parser.add_argument("--n_epochs", type=int, default=200)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument(
@@ -634,6 +640,10 @@ def get_argparse_args():
         help="max constant c_1 in log scale, used in calculation of outer step size in ClERR and ClERR-Heuristic (now implemented only for ClERR-Heuristic)",
     )
     parser.add_argument(
+        '--add_het',
+        action='store_true'
+    )
+    parser.add_argument(
         "--n_cpus", type=int, default=1, help="number of processes to run in parallel"
     )
     parser.add_argument(
@@ -651,8 +661,10 @@ if __name__ == "__main__":
 
     alg = args.alg
     task = args.task
+    model_type = args.model
     assert alg in ["so", "cso", "nastya", "clerr", "clerr_heuristic"]
     assert task in ["cifar10", "penn"]
+    assert model_type in ['resnet', 'lenet', 'lstm']
 
     if alg != 'clerr_heuristic':
         assert (
@@ -684,11 +696,11 @@ if __name__ == "__main__":
             and args.in_lr_max is not None
             and args.in_lr_min == args.in_lr_max
         ), "For clerr_heuristic we fix inner learning rate, which is equal to the best learning rate of cso"
-        in_step_size = [10**args.in_lr_min]
+        in_step_size = [float(10**args.in_lr_min)]
         assert (
             args.in_cl is not None
         ), "You did not provide --in_cl for algorithm clerr_heuristic!"
-        in_clip_level = [10**args.in_cl]
+        in_clip_level = [float(10**args.in_cl)]
 
         assert (
             args.lr_min is not None
@@ -730,7 +742,7 @@ if __name__ == "__main__":
     n_epochs = args.n_epochs
     n_seeds = 3
     partial_train = partial(
-        train_shuffling, args.test, task, alg, n_seeds, n_epochs, batch_size
+        train_shuffling, args.test, task, model_type, args.add_het, alg, n_seeds, n_epochs, batch_size
     )
     if alg == "so":
         if args.n_cpus == 1:
