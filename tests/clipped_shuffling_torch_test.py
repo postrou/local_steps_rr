@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from src.optimizers_torch import ClippedSGD, ShuffleOnceSampler
+from src.optimizers_torch import ClippedSGD
 
 
 class ClippedSGDTest(unittest.TestCase):
