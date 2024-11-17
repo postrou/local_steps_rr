@@ -791,8 +791,9 @@ if __name__ == '__main__':
 
         # step_size_list = np.logspace(-5, -1, 5)
 
-    elif dataset == 'logreg':
-        loss = load_logreg_dataset()
+    elif dataset.startswith('logreg'):
+        dataset_name = dataset.split('_')[1]
+        loss = load_logreg_dataset(dataset_name)
         n, dim = loss.A.shape
         l2 = loss.l2
         n_epochs = args.n_epochs
@@ -801,15 +802,15 @@ if __name__ == '__main__':
         n_seeds = 10
         stoch_it = n_epochs * n // batch_size
         trace_len = 500
-        if dataset == 'w8a':
+        if dataset == 'logreg_w8a':
             # clip_level_list = np.logspace(-3, 2, 6)
             x0 = csc_matrix((dim, 1))
             trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'
-        elif dataset == 'covtype':
+        elif dataset == 'logreg_covtype':
             # clip_level_list = np.logspace(-1, 2, 4)
             x0 = csc_matrix(np.random.normal(0, 1, size=(dim, 1)))
             trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}_x0_random/'
-        elif dataset == 'gisette':
+        elif dataset == 'logreg_gisette':
             # clip_level_list = np.logspace(-1, 2, 4)
             x0 = csc_matrix((dim, 1))
             trace_path = f'results/log_reg_{dataset}_l2_{relative_round(l2)}/'

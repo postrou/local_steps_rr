@@ -161,6 +161,7 @@ class LogisticRegression(Oracle):
 
 def load_logreg_dataset(dataset):
     A, b = get_dataset(dataset)
+    n, dim = A.shape
     loss = LogisticRegression(A, b, l1=0, l2=0)
     L = loss.smoothness()
     l2 = L / np.sqrt(n)
