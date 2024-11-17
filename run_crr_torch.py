@@ -46,6 +46,10 @@ def compute_and_store_epoch_results(
         train_loss, train_acc, train_gn, test_loss, test_acc, test_gn = (
             cifar_epoch_result(train_data, test_data, model, criterion, device)
         )
+    elif task.startswith('logreg'):
+        train_loss, train_acc, train_gn, test_loss, test_acc, test_gn = (
+            logreg_epoch_result(train_data, test_data, model, criterion, device)
+        )
     elif task == "penn":
         train_loss, train_gn, test_loss, test_gn = penn_epoch_result(
             train_data, test_data, model, criterion, device
@@ -54,7 +58,7 @@ def compute_and_store_epoch_results(
     train_gns[epoch + 1] = train_gn
     test_loss_vals[epoch + 1] = test_loss
     test_gns[epoch + 1] = test_gn
-    if task == "cifar10":
+    if task == 'cifar10' or task.startswith('logreg'):
         train_acc_vals[epoch + 1] = train_acc
         test_acc_vals[epoch + 1] = test_acc
 
@@ -218,13 +222,11 @@ def train_shuffling(
     inner_cl=None,
     c_0=None,
     c_1=None,
-    train_loader=None,
-    test_data=None,
 ):
-    assert task in ["cifar10", "penn"], f"Task {task} is not implemented!"
+    assert task in ["cifar10", "penn", 'logreg_covtype', 'logreg_gisette', 'logreg_realsim'], f"Task {task} is not implemented!"
     if not test:
         # all stdout goes to log file
-        log_dir = f"logs/{task}/bs_{batch_size}"
+        log_dir = f"logs/{task}/{model_type}/bs_{batch_size}"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
@@ -275,6 +277,7 @@ def train_shuffling(
             print(f"Starting {alg} for c_0={c_0}, c_1={c_1}, inner_lr={inner_lr}, inner_cl={inner_cl}")
             results_fn = f"clerr_heuristic_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_lr}_in_cl_{inner_cl}_so_seeds_{n_seeds}_{n_epochs}"
     results_path = os.path.join(results_dir, results_fn)
+
     if os.path.exists(results_path) and not test:
         if alg == "so":
             print(
@@ -308,14 +311,6 @@ def train_shuffling(
         return
 
     device = "cuda"
-    if train_loader is None or test_data is None:
-        if task == "cifar10":
-            train_loader, train_data, test_data = cifar_load_data("data/cifar10/", batch_size, add_het)
-        elif task == "penn":
-            n_tokens, train_loader, test_data = penn_load_data(
-                "data/penn/", batch_size
-            )
-
     train_loss_vals_all = {}
     train_acc_vals_all = {}
     train_gns_all = {}
@@ -339,10 +334,27 @@ def train_shuffling(
             test_acc_vals,
         ) = init_seed(seed, n_epochs)
 
+        if task == "cifar10":
+            train_loader, train_data, test_data = cifar_load_data("data/cifar10/", batch_size, add_het)
+        elif task == "penn":
+            n_tokens, train_loader, test_data = penn_load_data(
+                "data/penn/", batch_size
+            )
+        elif task == 'logreg_covtype':
+            train_loader, train_data, test_data = logreg_load_data('data/covtype.bz2', batch_size)
+        elif task == 'logreg_gisette':
+            train_loader, train_data, test_data = logreg_load_data('data/gisette.bz2', batch_size)
+        elif task == 'logreg_realsim':
+            train_loader, train_data, test_data = logreg_load_data('data/real-sim.bz2', batch_size)
+
         if model_type == "resnet":
             model, criterion = build_resnet_model(device)
         elif model_type == 'lenet':
             model, criterion = build_lenet_model(device)
+        elif model_type == 'linear':
+            input_dim = train_data[0][0].shape[1]
+            output_dim = 2
+            model, criterion = build_linear_model(input_dim, output_dim, device)
         elif task == "penn":
             model, criterion = build_lstm_model(n_tokens, device)
         model.train()
@@ -454,6 +466,21 @@ def train_shuffling(
                     initial_acc,
                     device,
                 )
+
+            if task.startswith("logreg"):
+                logreg_train_epoch(
+                    progress_bar,
+                    model,
+                    criterion,
+                    optimizer,
+                    train_local_loss_vals,
+                    train_local_gns,
+                    train_local_acc_vals,
+                    initial_loss,
+                    initial_gn,
+                    initial_acc,
+                    device,
+                )
             elif task == "penn":
                 penn_train_epoch(
                     progress_bar,
@@ -488,8 +515,8 @@ def train_shuffling(
                 device,
             )
 
-            train_acc = train_acc_vals[epoch + 1] if task == "cifar10" else None
-            test_acc = test_acc_vals[epoch + 1] if task == "cifar10" else None
+            train_acc = train_acc_vals[epoch + 1] if task == 'cifar10' or task.startswith('logreg') else None
+            test_acc = test_acc_vals[epoch + 1] if task == 'cifar10' or task.startswith('logreg') else None
             print_train_test_results(
                 alg,
                 seed + 1,
@@ -564,7 +591,7 @@ def train_shuffling(
         "test_loss": test_loss_vals_all,
         "test_gn": test_gns_all,
     }
-    if task == "cifar10":
+    if task == 'cifar10' or task.startswith('logreg'):
         result["train_acc"] = train_acc_vals_all
         result["test_acc"] = test_acc_vals_all
 
@@ -663,8 +690,8 @@ if __name__ == "__main__":
     task = args.task
     model_type = args.model
     assert alg in ["so", "cso", "nastya", "clerr", "clerr_heuristic"]
-    assert task in ["cifar10", "penn"]
-    assert model_type in ['resnet', 'lenet', 'lstm']
+    assert task in ["cifar10", "penn", 'logreg_covtype', 'logreg_gisette', 'logreg_realsim']
+    assert model_type in ['resnet', 'lenet', 'lstm', 'linear']
 
     if alg != 'clerr_heuristic':
         assert (

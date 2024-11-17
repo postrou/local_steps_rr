@@ -747,7 +747,7 @@ if __name__ == '__main__':
     parser.add_argument('--c_1_max', type=int, default=None, help='max c_1 in log scale')
     parser.add_argument('--a_min', type=int, default=None, help='min alpha in log scale (for shifts)')
     parser.add_argument('--a_max', type=int, default=None, help='max alpha in log scale (for shifts)')
-    parser.add_argument('--use_g', action='store_true')
+    parser.add_argument('--use_g', action='store_true', help='use gradient estimation g instead of the full gradient in global step size calculation of CLERR')
     parser.add_argument('--n_cpus', type=int, default=10, help='number of processes to run in parallel')
     args = parser.parse_args()
 

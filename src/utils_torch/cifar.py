@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
+from tqdm.auto import tqdm
 
 from src.optimizers_torch import ShuffleOnceSampler, ClERR, NASTYA
 from src.loss_functions.models import ResNet18, LeNet5
@@ -35,7 +36,7 @@ def cifar_load_data(path, batch_size, add_het=False):
     train_sampler = ShuffleOnceSampler(train_data)
     train_bs = min(batch_size, len(train_data))
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=train_bs, sampler=train_sampler, num_workers=1, pin_memory=True
+        train_data, batch_size=train_bs, sampler=train_sampler, num_workers=10, pin_memory=True
     )
     if train_bs == len(train_data):
         train_loader = [next(iter(train_loader))]
@@ -156,11 +157,12 @@ def cifar_train_epoch(progress_bar, model, criterion, optimizer, train_local_los
         if type(optimizer) in [ClERR, NASTYA]:
             optimizer.update_g()
 
-        progress_bar.set_postfix(
-            l_loss=f"{initial_loss:.3f}->{local_loss:.3f}",
-            l_gn=f"{initial_gn:.3f}->{local_gn:.3f}",
-            l_acc=f"{initial_acc:.3f}->{local_acc:.3f}",
-        )
+        if type(progress_bar) == tqdm:
+            progress_bar.set_postfix(
+                l_loss=f"{initial_loss:.3f}->{local_loss:.3f}",
+                l_gn=f"{initial_gn:.3f}->{local_gn:.3f}",
+                l_acc=f"{initial_acc:.3f}->{local_acc:.3f}",
+            )
         train_local_loss_vals.append(local_loss)
         train_local_gns.append(local_gn)
         train_local_acc_vals.append(local_acc)

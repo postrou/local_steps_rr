@@ -9,7 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from .penn_data import Corpus
 from .splitcross import SplitCrossEntropyLoss
 from src.loss_functions.models import LSTMModel
-from src.optimizers_torch import ShuffleOnceSampler, ClERR, NASTYA
+from src.optimizers_torch import RandomReshufflingSampler, ClERR, NASTYA
 
 
 class PTBDataset(Dataset):
@@ -56,8 +56,8 @@ def penn_load_data(path, batch_size):
     # test_batch_size = 1
     train_data = PTBDataset(corpus.train, seq_len)
     test_data = PTBDataset(corpus.test, seq_len)
-    train_sampler = ShuffleOnceSampler(train_data)
-    test_sampler = ShuffleOnceSampler(test_data)
+    train_sampler = RandomReshufflingSampler(train_data)
+    test_sampler = RandomReshufflingSampler(test_data)
     train_loader = DataLoader(train_data, batch_size, sampler=train_sampler, 
                               num_workers=4, pin_memory=True)
     test_loader = DataLoader(test_data, batch_size, sampler=test_sampler, 
