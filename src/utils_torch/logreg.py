@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch.nn as nn
 from sklearn.datasets import load_svmlight_file
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 from src.optimizers_torch import ShuffleOnceSampler, ClERR, NASTYA
 from src.loss_functions.models import LinearModel
@@ -12,11 +13,12 @@ from .cifar import cifar_epoch_result, cifar_train_epoch
 
 def logreg_load_data(path, batch_size):
     X, y = load_svmlight_file(path)
+    X = StandardScaler().fit_transform(X.toarray())
     X_train, X_test, y_train, y_test = \
         train_test_split(X, y, test_size=0.25, random_state=0)
-    X_train_tensor = torch.tensor(X_train.toarray(), dtype=torch.float32)
-    X_test_tensor = torch.tensor(X_test.toarray(), dtype=torch.float32)
-    if 'covtype' in path:
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    if 'covtype' in path or 'mushrooms' in path:
         y_train_tensor = torch.tensor(y_train - 1, dtype=torch.long)
         y_test_tensor = torch.tensor(y_test - 1, dtype=torch.long)
     elif 'gisette' in path or 'real-sim' in path:
