@@ -133,4 +133,8 @@ def test():
     y = net(torch.randn(1, 3, 32, 32))
     print(y.size())
 
-# test()
+
+def build_resnet_model(device):
+    model = ResNet18().to(device)
+    criterion = nn.CrossEntropyLoss()
+    return model, criterion

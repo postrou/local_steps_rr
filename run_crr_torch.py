@@ -12,6 +12,7 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from src.optimizers_torch import ClippedSGD, NASTYA, ClERR, ClERRHeuristic
+from src.loss_functions.models import build_lenet_model, build_resnet_model
 from src.utils_torch import *
 
 

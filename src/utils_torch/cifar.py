@@ -90,18 +90,6 @@ def cifar_add_heterogeneity(train_data):
                     pic[:, col_idx, :] = np.maximum(pic[:, col_idx, :] - val, 0)
         
 
-def build_resnet_model(device):
-    model = ResNet18().to(device)
-    criterion = nn.CrossEntropyLoss()
-    return model, criterion
-
-
-def build_lenet_model(device):
-    model = LeNet5().to(device)
-    criterion = nn.CrossEntropyLoss()
-    return model, criterion
-
-
 def cifar_predict_and_loss(inputs, targets, model, criterion):
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         outputs = model(inputs)

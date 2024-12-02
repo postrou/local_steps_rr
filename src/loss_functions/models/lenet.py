@@ -41,3 +41,8 @@ class LeNet5(nn.Module):
             gn += p.grad.square().sum()
         return gn.sqrt().item()
 
+
+def build_lenet_model(device):
+    model = LeNet5().to(device)
+    criterion = nn.CrossEntropyLoss()
+    return model, criterion
