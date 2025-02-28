@@ -15,7 +15,7 @@ from src.loss_functions import load_quadratic_dataset, load_logreg_dataset, \
     load_fourth_order_dataset
 from src.optimizers import Sgd, Shuffling, ClippedShuffling, \
     ClippedShuffling2, ClippedShuffling3, ClippedShufflingOPTF, \
-        ClippedShufflingMean, ClippedShufflingSAGA, ClERR, ClERR2, NASTYA
+        ClippedShufflingMean, ClippedShufflingSAGA, ClERR, NASTYA
 from src.utils import get_trace, relative_round
 
 
@@ -327,46 +327,6 @@ def crr_shift_2(
         crr_shift_trace.save(f'c_{clip_level}_shift_rr_2_{n_epochs}', trace_path)
 
 
-def crr_shift_2_1(
-    loss,
-    x0, 
-    x_opt,
-    n_epochs, 
-    stoch_it, 
-    n_seeds, 
-    trace_len, 
-    trace_path, 
-    batch_size, 
-    step_size_list,
-    clip_level,
-):
-    crr_shift_trace = get_trace(os.path.join(f'{trace_path}', f'c_{clip_level}_shift_rr_2.1_{n_epochs}'), loss)
-    if not crr_shift_trace:        
-        cl_crr_shift_traces = []
-        for step_size in step_size_list:
-            lr0 = step_size
-            crr_shift = ClippedShuffling2_1(
-                loss=loss, 
-                lr0=lr0, 
-                it_max=stoch_it, 
-                n_seeds=n_seeds, 
-                batch_size=batch_size, 
-                trace_len=trace_len,
-                clip_level=clip_level,
-                steps_per_permutation=np.inf,
-                x_opt=x_opt
-            )
-            crr_shift_trace = crr_shift.run(x0=x0)
-            crr_shift_trace.convert_its_to_epochs(batch_size=batch_size)
-            crr_shift_trace.compute_loss_of_iterates()
-            crr_shift_trace.compute_last_iterate_grad_norms()
-            cl_crr_shift_traces.append(crr_shift_trace)
-
-        crr_shift_trace = best_trace_by_step_size(cl_crr_shift_traces, step_size_list)
-        print(f'Best step size for clip level {clip_level}: {crr_shift_trace.step_size}')
-        crr_shift_trace.save(f'c_{clip_level}_shift_rr_2.1_{n_epochs}', trace_path)
-
-
 def crr_shift_3(
     loss,
     x0, 
@@ -652,7 +612,6 @@ def clerr(
     trace_len, 
     trace_path, 
     batch_size, 
-    use_first_type,
     use_g,
     inner_step_size,
     clip_level=None,
@@ -661,18 +620,16 @@ def clerr(
     c_1=None
 ):
     if use_g:
-        if use_first_type:
-            if c_0 is None and c_1 is None:
-                trace_name = f'clerr_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
-            else:
-                trace_name = f'clerr_g_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_step_size}_{n_epochs}'
+        if c_0 is None and c_1 is None:
+            trace_name = f'clerr_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
         else:
-            trace_name = f'clerr_2_g_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
+            trace_name = f'clerr_g_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_step_size}_{n_epochs}'
     else:
-        if use_first_type:
+        if c_0 is None and c_1 is None:
             trace_name = f'clerr_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
         else:
-            trace_name = f'clerr_2_c_{clip_level}_lr_{step_size}_in_lr_{inner_step_size}_{n_epochs}'
+            trace_name = f'clerr_c_0_{c_0}_c_1_{c_1}_in_lr_{inner_step_size}_{n_epochs}'
+
     clerr_trace = get_trace(
         os.path.join(trace_path, trace_name), 
         loss
@@ -681,8 +638,7 @@ def clerr(
         if c_0 is None and c_1 is None:
             c_0 = 1 / (2 * step_size)
             c_1 = c_0 / clip_level
-        ClerrClass = ClERR if use_first_type else ClERR2
-        clerr = ClerrClass(
+        clerr = ClERR(
             c_0=c_0,
             c_1=c_1,
             inner_step_size=inner_step_size,
@@ -697,13 +653,10 @@ def clerr(
         try:
             clerr_trace = clerr.run(x0=x0)
         except AssertionError:
-            if use_first_type:
-                if c_0 is None and c_1 is None:
-                    print(f'CLERR, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
-                else:
-                    print(f'CLERR, some error, skipping c_0={c_0}, c_1={c_1}, inner_lr={inner_step_size}')
+            if c_0 is None and c_1 is None:
+                print(f'CLERR, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
             else:
-                print(f'CLERR-2, some error, skipping cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}')
+                print(f'CLERR, some error, skipping c_0={c_0}, c_1={c_1}, inner_lr={inner_step_size}')
             return
         clerr_trace.convert_its_to_epochs(batch_size=batch_size)
         clerr_trace.compute_loss_of_iterates()
@@ -711,21 +664,15 @@ def clerr(
             trace_name,
             trace_path
         )
-        if use_first_type:
-            if c_0 is None and c_1 is None:
-                print(f'🥰🥰🥰 Finished CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
-            else:
-                print(f'🥰🥰🥰 Finished CLERR trace with c_0={c_0}, c_1={c_1}, inner_lr={inner_step_size}! 🥰🥰🥰')
+        if c_0 is None and c_1 is None:
+            print(f'🥰🥰🥰 Finished CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
         else:
-            print(f'🥰🥰🥰 Finished CLERR-2 trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size}! 🥰🥰🥰')
+            print(f'🥰🥰🥰 Finished CLERR trace with c_0={c_0}, c_1={c_1}, inner_lr={inner_step_size}! 🥰🥰🥰')
     else:
-        if use_first_type:
-            if c_0 is None and c_1 is None:
-                print(f'🤙🤙🤙 CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
-            else:
-                print(f'🤙🤙🤙 CLERR trace with c_0={c_0}, lr={c_1}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
+        if c_0 is None and c_1 is None:
+            print(f'🤙🤙🤙 CLERR trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
         else:
-            print(f'🤙🤙🤙 CLERR-2 trace with cl={clip_level}, lr={step_size}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
+            print(f'🤙🤙🤙 CLERR trace with c_0={c_0}, lr={c_1}, inner_lr={inner_step_size} already exists! 🤙🤙🤙')
 
 
 if __name__ == '__main__':
@@ -949,33 +896,6 @@ if __name__ == '__main__':
         pool = Pool(min(len(clip_level_list), args.n_cpus))
         partial_crr_shift = partial(
             crr_shift_2,
-            loss,
-            x0, 
-            x_opt,
-            n_epochs, 
-            stoch_it, 
-            n_seeds, 
-            trace_len, 
-            trace_path, 
-            batch_size, 
-            step_size_list
-        )
-        # partial_crr_shift(clip_level_list[0])
-        pool.map(partial_crr_shift, clip_level_list)
-
-    elif alg == 'crr_shift_2_1':
-        assert args.cl_min is not None and args.cl_max is not None, \
-            f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is not None and args.lr_max is not None, \
-            f'You did not provide --lr_min or --lr_max for algorithm {alg}'
-
-        step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
-        clip_level_list = np.logspace(args.cl_min, args.cl_max, args.cl_max - args.cl_min + 1)
-
-        print('Clipping with shifts, version 2.1')
-        pool = Pool(min(len(clip_level_list), args.n_cpus))
-        partial_crr_shift = partial(
-            crr_shift_2_1,
             loss,
             x0, 
             x_opt,
@@ -1269,7 +1189,6 @@ if __name__ == '__main__':
             print('clip levels:', clip_level_list)
             print('inner step sizes:', in_step_size_list)
 
-            use_first_type = alg == 'clerr'
             partial_clerr = partial(
                 clerr,
                 loss,
@@ -1280,7 +1199,6 @@ if __name__ == '__main__':
                 trace_len,
                 trace_path,
                 batch_size,
-                use_first_type,
                 args.use_g,
             )
             if args.n_cpus == 1:
@@ -1300,7 +1218,6 @@ if __name__ == '__main__':
             print('c_1:', c_1_list)
             print('inner step sizes:', in_step_size_list)
 
-            use_first_type = alg == 'clerr'
             partial_clerr = partial(
                 clerr,
                 loss,
@@ -1311,7 +1228,6 @@ if __name__ == '__main__':
                 trace_len,
                 trace_path,
                 batch_size,
-                use_first_type,
                 args.use_g,
             )
             if args.n_cpus == 1:
