@@ -1,15 +1,15 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 import torchvision
 import torchvision.transforms as transforms
 from tqdm.auto import tqdm
 
 from src.optimizers_torch import ShuffleOnceSampler, ClERR, NASTYA
-from src.loss_functions.models import ResNet18, LeNet5
 
 
-def cifar_load_data(path, batch_size, add_het=False):
+def cifar_load_data(path, batch_size, add_het=False, model_type='resnet'):
     print("Preparing data..")
     transform_train = transforms.Compose(
         [
@@ -28,29 +28,31 @@ def cifar_load_data(path, batch_size, add_het=False):
     )
 
     train_data = torchvision.datasets.CIFAR10(
-        root=path, train=True, download=True
+        root=path, train=True, download=True, transform=transform_train
     )
     if add_het:
         cifar_add_heterogeneity(train_data)
-    train_data.transform = transform_train
     train_sampler = ShuffleOnceSampler(train_data)
     train_bs = min(batch_size, len(train_data))
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = DataLoader(
         train_data, batch_size=train_bs, sampler=train_sampler, num_workers=10, pin_memory=True
     )
     if train_bs == len(train_data):
         train_loader = [next(iter(train_loader))]
 
-    train_ep_eval_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=len(train_data), sampler=train_sampler, num_workers=10, pin_memory=True
-    )
-    train_data = [next(iter(train_ep_eval_loader))]
+    if model_type != 'resnet':
+        train_ep_eval_loader = DataLoader(
+            train_data, batch_size=len(train_data), sampler=train_sampler, num_workers=10, pin_memory=True
+        )
+        train_data = [next(iter(train_ep_eval_loader))]
+    else:
+        train_data = train_loader
 
     test_data = torchvision.datasets.CIFAR10(
         root=path, train=False, download=True, transform=transform_test
     )
     test_sampler = ShuffleOnceSampler(test_data)
-    test_loader = torch.utils.data.DataLoader(
+    test_loader = DataLoader(
         test_data, batch_size=len(test_data), sampler=test_sampler, num_workers=10, pin_memory=True
     )
     test_data = [next(iter(test_loader))]
@@ -86,18 +88,6 @@ def cifar_add_heterogeneity(train_data):
                     pic[:, col_idx, :] = np.maximum(pic[:, col_idx, :] - val, 0)
         
 
-def build_resnet_model(device):
-    model = ResNet18().to(device)
-    criterion = nn.CrossEntropyLoss()
-    return model, criterion
-
-
-def build_lenet_model(device):
-    model = LeNet5().to(device)
-    criterion = nn.CrossEntropyLoss()
-    return model, criterion
-
-
 def cifar_predict_and_loss(inputs, targets, model, criterion):
     with torch.autocast(device_type='cuda', dtype=torch.float16):
         outputs = model(inputs)
@@ -115,10 +105,15 @@ def cifar_epoch_result(train_data, test_data, model, criterion, device):
         inputs, targets = inputs.to(device), targets.to(device)
         # here we get mean loss over the batch
         predicted, loss = cifar_predict_and_loss(inputs, targets, model, criterion)
+        if type(train_data) == DataLoader:
+            loss *= len(targets) / len(train_data.dataset)
         loss.backward()
         train_loss += loss.item()
         train_acc += predicted.eq(targets).sum().item()
-    train_acc /= len(inputs)
+    if type(train_data) == DataLoader:
+        train_acc /= len(train_data.dataset)
+    else:
+        train_acc /= len(inputs)
     train_grad_norm = model.gradient_norm()
 
     test_loss = 0

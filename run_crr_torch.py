@@ -12,6 +12,7 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from src.optimizers_torch import ClippedSGD, NASTYA, ClERR, ClERRHeuristic
+from src.loss_functions.models import build_lenet_model, build_resnet_model
 from src.utils_torch import *
 
 
@@ -223,7 +224,7 @@ def train_shuffling(
     c_0=None,
     c_1=None,
 ):
-    assert task in ["cifar10", "penn", 'logreg_covtype', 'logreg_gisette', 'logreg_realsim'], f"Task {task} is not implemented!"
+    assert task in ["cifar10", "penn", 'logreg_covtype', 'logreg_gisette', 'logreg_realsim', 'logreg_mushrooms'], f"Task {task} is not implemented!"
     if not test:
         # all stdout goes to log file
         log_dir = f"logs/{task}/{model_type}/bs_{batch_size}"
@@ -335,7 +336,7 @@ def train_shuffling(
         ) = init_seed(seed, n_epochs)
 
         if task == "cifar10":
-            train_loader, train_data, test_data = cifar_load_data("data/cifar10/", batch_size, add_het)
+            train_loader, train_data, test_data = cifar_load_data("data/cifar10/", batch_size, add_het, model_type)
         elif task == "penn":
             n_tokens, train_loader, test_data = penn_load_data(
                 "data/penn/", batch_size
@@ -346,6 +347,8 @@ def train_shuffling(
             train_loader, train_data, test_data = logreg_load_data('data/gisette.bz2', batch_size)
         elif task == 'logreg_realsim':
             train_loader, train_data, test_data = logreg_load_data('data/real-sim.bz2', batch_size)
+        elif task == 'logreg_mushrooms':
+            train_loader, train_data, test_data = logreg_load_data('data/mushrooms', batch_size)
 
         if model_type == "resnet":
             model, criterion = build_resnet_model(device)
@@ -690,7 +693,7 @@ if __name__ == "__main__":
     task = args.task
     model_type = args.model
     assert alg in ["so", "cso", "nastya", "clerr", "clerr_heuristic"]
-    assert task in ["cifar10", "penn", 'logreg_covtype', 'logreg_gisette', 'logreg_realsim']
+    assert task in ["cifar10", "penn", 'logreg_covtype', 'logreg_gisette', 'logreg_realsim', 'logreg_mushrooms']
     assert model_type in ['resnet', 'lenet', 'lstm', 'linear']
 
     if alg != 'clerr_heuristic':
