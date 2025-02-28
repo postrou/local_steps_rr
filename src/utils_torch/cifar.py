@@ -7,7 +7,6 @@ import torchvision.transforms as transforms
 from tqdm.auto import tqdm
 
 from src.optimizers_torch import ShuffleOnceSampler, ClERR, NASTYA
-from src.loss_functions.models import ResNet18, LeNet5
 
 
 def cifar_load_data(path, batch_size, add_het=False, model_type='resnet'):
@@ -29,11 +28,10 @@ def cifar_load_data(path, batch_size, add_het=False, model_type='resnet'):
     )
 
     train_data = torchvision.datasets.CIFAR10(
-        root=path, train=True, download=True
+        root=path, train=True, download=True, transform=transform_train
     )
     if add_het:
         cifar_add_heterogeneity(train_data)
-    train_data.transform = transform_train
     train_sampler = ShuffleOnceSampler(train_data)
     train_bs = min(batch_size, len(train_data))
     train_loader = DataLoader(
