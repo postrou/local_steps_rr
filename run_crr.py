@@ -457,12 +457,9 @@ if __name__ == '__main__':
     dataset = args.dataset
     n_epochs = args.n_epochs
     batch_size = args.batch_size
+
     if dataset.startswith('quadratic'):
         n_seeds = 10
-        loss, x0, x_opt, n_seeds, stoch_it, trace_len, trace_path, plot_path = \
-            load_fourth_order_dataset(n_epochs, n_seeds, args.batch_size)
-
-
         is_noised = dataset == 'quadratic_noised'
         loss = load_quadratic_dataset(is_noised)
         f_opt, x_opt = loss.f_opt, loss.x_opt
@@ -486,8 +483,6 @@ if __name__ == '__main__':
             plot_path = f'plots/{dataset}/x0_{x0[0]}/bs_{batch_size}'
         if not os.path.exists(trace_path):
             os.makedirs(trace_path)
-
-        # step_size_list = np.logspace(-5, -1, 5)
 
     elif dataset.startswith('logreg'):
         dataset_name = dataset.split('_')[1]
@@ -605,7 +600,7 @@ if __name__ == '__main__':
         pool.map(partial_crr_opt, clip_level_list)
 
     elif alg == 'so':
-        assert args.lr_min is not None and args.lrr_max is not None, \
+        assert args.lr_min is not None and args.lr_max is not None, \
             f'You did not provide --lr_min or --lr_max for algorithm {alg}'
 
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
@@ -624,7 +619,7 @@ if __name__ == '__main__':
         )
 
     elif alg == 'sgd':
-        assert args.lr_min is not None and args.lrr_max is not None, \
+        assert args.lr_min is not None and args.lr_max is not None, \
             f'You did not provide --lr_min or --lr_max for algorithm {alg}'
 
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
@@ -643,7 +638,7 @@ if __name__ == '__main__':
         )
 
     elif alg == 'ig':
-        assert args.lr_min is not None and args.lrr_max is not None, \
+        assert args.lr_min is not None and args.lr_max is not None, \
             f'You did not provide --lr_min or --lr_max for algorithm {alg}'
 
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
@@ -664,7 +659,7 @@ if __name__ == '__main__':
     elif alg == 'cig':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is not None and args.lrr_max is not None, \
+        assert args.lr_min is not None and args.lr_max is not None, \
             f'You did not provide --lr_min or --lr_max for algorithm {alg}'
 
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
@@ -689,7 +684,7 @@ if __name__ == '__main__':
     elif alg == 'cig_opt':
         assert args.cl_min is not None and args.cl_max is not None, \
             f'You did not provide --cl_min or --cl_max for algorithm {alg}'
-        assert args.lr_min is not None and args.lrr_max is not None, \
+        assert args.lr_min is not None and args.lr_max is not None, \
             f'You did not provide --lr_min or --lr_max for algorithm {alg}'
 
         step_size_list = np.logspace(args.lr_min, args.lr_max, args.lr_max - args.lr_min + 1)
