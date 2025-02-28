@@ -81,7 +81,7 @@ def sgd(
     sgd_trace = get_trace(os.path.join(f'{trace_path}', f'sgd_{n_epochs}'), loss)
     if not sgd_trace:
         sgd_traces = []
-        for step_size in tqdm(step_size_list):
+        for step_size in tqdm(step_size_list, desc='Step sizes'):
             lr0 = step_size
             sgd = Sgd(
                 loss=loss,
@@ -115,7 +115,7 @@ def ig(
     ig_trace = get_trace(os.path.join(f'{trace_path}', f'ig_{n_epochs}'), loss)
     if not ig_trace:
         ig_traces = []
-        for step_size in tqdm(step_size_list):
+        for step_size in tqdm(step_size_list, desc='Step sizes'):
             lr0 = step_size
             ig = Ig(
                 loss=loss, 
@@ -147,7 +147,7 @@ def rr(
     rr_trace = get_trace(os.path.join(f'{trace_path}', f'rr_{n_epochs}'), loss)
     if not rr_trace:
         rr_traces = []
-        for step_size in tqdm(step_size_list):
+        for step_size in tqdm(step_size_list, desc='Step sizes'):
             lr0 = step_size
             rr = Shuffling(
                 loss=loss, 
@@ -217,7 +217,7 @@ def crr_opt(
     crr_opt_trace = get_trace(os.path.join(trace_path, f'c_{clip_level}_rr_opt_{n_epochs}'), loss)
     if not crr_opt_trace:
         cl_crr_opt_traces = []
-        for step_size in step_size_list:
+        for step_size in tqdm(step_size_list, desc='Step sizes'):
             lr0 = step_size
             crr_opt = ClippedShuffling(
                 loss=loss, 
@@ -256,7 +256,7 @@ def cig(
     cig_trace = get_trace(f'{trace_path}c_{clip_level}_ig_{n_epochs}', loss)
     if not cig_trace:
         cl_cig_traces = []
-        for step_size in step_size_list:
+        for step_size in tqdm(step_size_list, desc='Step sizes'):
             lr0 = step_size
             cig = ClippedIg(
                 clip_level,
@@ -292,7 +292,7 @@ def cig_opt(
     cig_opt_trace = get_trace(f'{trace_path}c_{clip_level}_ig_opt_{n_epochs}', loss)
     if not cig_opt_trace:
         cl_cig_opt_traces = []
-        for step_size in step_size_list:
+        for step_size in tqdm(step_size_list, desc='Step sizes'):
             lr0 = step_size
             cig_opt = ClippedIg(
                 clip_level,
@@ -439,8 +439,8 @@ if __name__ == '__main__':
     parser.add_argument('--cl_max', type=int, default=None, help='max clip level in log scale')
     parser.add_argument('--lr_min', type=int, default=None, help='min step size in log scale')
     parser.add_argument('--lr_max', type=int, default=None, help='max step size in log scale')
-    parser.add_argument('--in_lr_min', type=float, default=None, help='min inner step size in log scale (for CLERR and Nastya)')
-    parser.add_argument('--in_lr_max', type=float, default=None, help='max inner step size in log scale (for CLERR and Nastya)')
+    parser.add_argument('--in_lr_min', type=int, default=None, help='min inner step size in log scale (for CLERR and Nastya)')
+    parser.add_argument('--in_lr_max', type=int, default=None, help='max inner step size in log scale (for CLERR and Nastya)')
     parser.add_argument('--c_0_min', type=int, default=None, help='min c_0 in log scale')
     parser.add_argument('--c_0_max', type=int, default=None, help='max c_0 in log scale')
     parser.add_argument('--c_1_min', type=int, default=None, help='min c_1 in log scale')
