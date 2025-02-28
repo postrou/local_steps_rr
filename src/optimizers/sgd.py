@@ -37,8 +37,3 @@ class Sgd(StochasticOptimizer):
             lr_decayed = np.inf
         self.lr = min(lr_decayed, self.lr_max)
         self.x -= self.lr * self.grad
-    
-    def init_run(self, *args, **kwargs):
-        super(Sgd, self).init_run(*args, **kwargs)
-        if self.lr0 is None:
-            self.lr0 = 1 / self.loss.batch_smoothness(batch_size)
