@@ -88,23 +88,37 @@ class StochasticTrace:
         self.its = np.asarray(self.its) / its_per_epoch
         self.its_converted_to_epochs = True
         
-    def plot_losses(self, f_opt=None, log_std=True, markevery=None, alpha=0.25, ax=None, *args, **kwargs):
+    def plot_losses(self, f_opt=None, log_std=True, min_max=False, markevery=None, alpha=0.25, ax=None, *args, **kwargs):
         if not self.loss_is_computed:
             self.compute_loss_of_iterates()
         if f_opt is None:
             f_opt = self.best_loss_value()
         it_ave = np.mean([np.asarray(its) for its in self.its_all.values()], axis=0)
-        if log_std:
-            y_log = [np.log(loss_vals-f_opt) for loss_vals in self.loss_vals_all.values()]
-            y_log_ave = np.mean(y_log, axis=0)
-            y_log_std = np.std(y_log, axis=0)
-            upper, lower = np.exp(y_log_ave + y_log_std), np.exp(y_log_ave - y_log_std)
-            y_ave = np.exp(y_log_ave)
+
+        if min_max:
+            # y = [loss_vals-f_opt for loss_vals in self.loss_vals_all.values()]
+            # y_ave = np.mean(y, axis=0)
+            # y_max = np.max(y, axis=0)
+            # y_min = np.min(y, axis=0)
+            # upper, lower = y_max, y_min
+            y = [np.log(loss_vals-f_opt) for loss_vals in self.loss_vals_all.values()]
+            y_ave = np.exp(np.mean(y, axis=0))
+            y_max = np.max(y, axis=0)
+            y_min = np.min(y, axis=0)
+            upper, lower = np.exp(y_max), np.exp(y_min)
         else:
-            y = [loss_vals-f_opt for loss_vals in self.loss_vals_all.values()]
-            y_ave = np.mean(y, axis=0)
-            y_std = np.std(y, axis=0)
-            upper, lower = y_ave + y_std, y_ave - y_std
+            if log_std:
+                y_log = [np.log(loss_vals-f_opt) for loss_vals in self.loss_vals_all.values()]
+                y_log_ave = np.mean(y_log, axis=0)
+                y_log_std = np.std(y_log, axis=0)
+                upper, lower = np.exp(y_log_ave + y_log_std), np.exp(y_log_ave - y_log_std)
+                y_ave = np.exp(y_log_ave)
+            else:
+                y = [loss_vals-f_opt for loss_vals in self.loss_vals_all.values()]
+                y_ave = np.mean(y, axis=0)
+                y_std = np.std(y, axis=0)
+                upper, lower = y_ave + y_std, y_ave - y_std
+
         if markevery is None:
             markevery = max(1, len(y_ave)//20)
             
